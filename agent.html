@@ -537,6 +537,14 @@ input:focus-visible, textarea:focus-visible, button:focus-visible, a:focus-visib
       <div class="seg full" id="delaySeg"></div>
       <div class="hint">After you open the app or come back from dialing, the app waits this long, and until you stop tapping, before asking "Did it go through?" or about repeated transactions. This way it does not interrupt you while you are busy.</div>
     </div>
+    <div class="settings-block" id="cdBlock" hidden>
+      <span class="fl">Request cooldown</span>
+      <div class="hint">After a client sends a request, they cannot send another until you answer it, or until this many seconds pass. Set 0 to turn it off.</div>
+      <div class="inputrow">
+        <input id="cdIn" type="text" inputmode="numeric" autocomplete="off" maxlength="4" placeholder="30" style="flex:1;font:500 1rem var(--font-body);min-height:50px;padding:0 12px;border-radius:10px;border:1.5px solid var(--line);background:var(--surface);color:var(--ink)">
+        <button class="btn primary" id="cdSave" type="button">Save</button>
+      </div>
+    </div>
     <div class="settings-block">
       <span class="fl">Dial button</span>
       <div class="hint">Drag the Dial and Copy button anywhere on the Desk screen. It stays where you leave it.</div>
@@ -702,7 +710,8 @@ input:focus-visible, textarea:focus-visible, button:focus-visible, a:focus-visib
       });
     });
   }
-  function ensure() { return sb.auth.getSession().then(function (r) { return r.data.session || login(); }); }
+  var pendLogin = null;
+  function ensure() { if (!pendLogin) pendLogin = sb.auth.getSession().then(function (r) { return r.data.session || login(); }); return pendLogin; }
   window.MOMO_TRANSPORT = {
     subscribe: function (cb) {
       ensure().then(function () {
@@ -714,6 +723,14 @@ input:focus-visible, textarea:focus-visible, button:focus-visible, a:focus-visib
         document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') pull(); });
         setInterval(function () { if (document.visibilityState === 'visible') pull(); }, 20000);
       });
+    },
+    getCooldown: function () {
+      return ensure().then(function () { return sb.from('settings').select('cooldown_seconds').eq('id', 1).single(); })
+        .then(function (r) { return r.data ? r.data.cooldown_seconds : null; }, function () { return null; });
+    },
+    setCooldown: function (n) {
+      return ensure().then(function () { return sb.from('settings').update({ cooldown_seconds: n }).eq('id', 1); })
+        .then(function (r) { return !r.error; }, function () { return false; });
     },
     setStatus: function (id, st, fix) {
       var u = { status: st };
@@ -1704,6 +1721,16 @@ input:focus-visible, textarea:focus-visible, button:focus-visible, a:focus-visib
       ? 'Off: transactions are recorded as soon as you tap Dial, even if they fail or are cancelled.'
       : 'On: "Did it go through?" appears when you return to the app, so failed or cancelled transactions never change your cash and float.';
   }
+  (function () {
+    var T = window.MOMO_TRANSPORT; if (!T || !T.getCooldown) return;
+    $('cdBlock').style.display = 'flex'; $('cdBlock').hidden = false;
+    T.getCooldown().then(function (v) { if (v !== null && v !== undefined) $('cdIn').value = v; });
+    $('cdSave').addEventListener('click', function () {
+      var n = Math.round(Number($('cdIn').value.replace(/\D/g, '')));
+      if (!(n >= 0 && n <= 3600)) { toast('Enter 0 to 3600 seconds'); return; }
+      T.setCooldown(n).then(function (ok) { toast(ok ? (n ? 'Cooldown set to ' + n + ' s' : 'Cooldown turned off') : 'Could not save'); });
+    });
+  })();
   function renderDupSw() { $('dupSw').setAttribute('aria-checked', state.dup); }
   $('dupSw').addEventListener('click', function () { state.dup = !state.dup; lsSet('momo.dup', state.dup ? '1' : '0'); renderDupSw(); renderDupFz(); });
   renderDupSw();

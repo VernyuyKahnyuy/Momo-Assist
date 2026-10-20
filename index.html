@@ -82,6 +82,7 @@ input:focus-visible, button:focus-visible { outline: 3px solid var(--blue); outl
       <div class="hint" id="amtHint"></div>
     </div>
     <button class="go" id="go" disabled>Send my request</button>
+    <div class="hint" id="waitHint" style="text-align:center;font-weight:600"></div>
   </main>
 
   <section id="doneView" class="wrap" hidden style="gap:16px">
@@ -156,7 +157,7 @@ input:focus-visible, button:focus-visible { outline: 3px solid var(--blue); outl
     $('amt').value = d ? fmt(Number(d)) : '';
     $('amtHint').textContent = a > 0 ? fmt(a) + ' FCFA' : '';
     var optOk = !job || !job.opts || opt > -1;
-    $('go').disabled = !(job && optOk && numOk && a > 0);
+    $('go').disabled = locked || !(job && optOk && numOk && a > 0);
   }
   $('num').addEventListener('input', check);
   $('amt').addEventListener('input', check);
@@ -164,10 +165,38 @@ input:focus-visible, button:focus-visible { outline: 3px solid var(--blue); outl
   // Sends the request to the agent through Supabase. Resolves true when delivered.
   var sb = null, watchId = 0;
   (function () { var C = window.MOMO_CONFIG; if (C && window.supabase && !/YOUR-/.test(C.url)) sb = window.supabase.createClient(C.url, C.key); })();
+  var lastErr = '';
+  function deviceId() {
+    try { var d = localStorage.getItem('momo.dev'); if (!d) { d = 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10); localStorage.setItem('momo.dev', d); } return d; }
+    catch (e) { return null; }
+  }
   function deliver(req) {
+    lastErr = '';
     if (!sb) return Promise.resolve(false);
-    return sb.from('requests').insert({ id: req.id, job: req.job, details: req.details, num: req.num, amt: req.amt, currency: 'FCFA' })
-      .then(function (r) { return !r.error; }, function () { return false; });
+    return sb.from('requests').insert({ id: req.id, job: req.job, details: req.details, num: req.num, amt: req.amt, currency: 'FCFA', device_id: deviceId() })
+      .then(function (r) { if (r.error) lastErr = /cooldown/i.test(r.error.message || '') ? 'cooldown' : 'fail'; return !r.error; }, function () { lastErr = 'fail'; return false; });
+  }
+
+  // Cooldown: while the last request is still unanswered, a new one is blocked for a set time.
+  // The time comes from the agent's settings. The database enforces it too, so refreshing the page does not get around it.
+  var cooldown = 30, locked = false, lockTimer = null;
+  function getLast() { try { return JSON.parse(localStorage.getItem('momo.last') || 'null'); } catch (e) { return null; } }
+  function setLast(o) { try { if (o) localStorage.setItem('momo.last', JSON.stringify(o)); else localStorage.removeItem('momo.last'); } catch (e) {} }
+  function unlock() { locked = false; clearInterval(lockTimer); lockTimer = null; $('waitHint').textContent = ''; setLast(null); check(); }
+  function startLock(at) {
+    clearInterval(lockTimer); lockTimer = null;
+    function tick() {
+      var left = Math.ceil((at + cooldown * 1000 - Date.now()) / 1000);
+      if (left <= 0) { unlock(); return; }
+      locked = true; $('waitHint').textContent = 'Your last request is still waiting. You can send another in ' + left + ' s.'; check();
+    }
+    tick(); if (locked) lockTimer = setInterval(tick, 1000);
+  }
+  if (sb) {
+    sb.rpc('get_cooldown').then(function (r) { if (typeof r.data === 'number') cooldown = r.data; }, function () {}).then(function () {
+      var last = getLast(); if (!last) return;
+      sb.rpc('request_status', { rid: last.id }).then(function (r) { if (r.data === 'pending') startLock(last.at); else setLast(null); }, function () {});
+    });
   }
   // After sending, shows the client whether the agent accepted or rejected.
   function watch(id) {
@@ -176,8 +205,8 @@ input:focus-visible, button:focus-visible { outline: 3px solid var(--blue); outl
       if (mine !== watchId || tries++ > 150) return;
       sb.rpc('request_status', { rid: id }).then(function (r) {
         if (mine !== watchId) return;
-        if (r.data === 'accepted') { $('status').className = 'status'; $('status').textContent = 'The agent accepted your request.'; return; }
-        if (r.data === 'rejected') { $('status').className = 'status warn'; $('status').textContent = 'The agent could not do this request.'; return; }
+        if (r.data === 'accepted') { unlock(); $('status').className = 'status'; $('status').textContent = 'The agent accepted your request.'; return; }
+        if (r.data === 'rejected') { unlock(); $('status').className = 'status warn'; $('status').textContent = 'The agent could not do this request.'; return; }
         setTimeout(poll, 4000);
       }, function () { setTimeout(poll, 8000); });
     })();
@@ -196,6 +225,7 @@ input:focus-visible, button:focus-visible { outline: 3px solid var(--blue); outl
     };
     $('go').disabled = true; $('go').textContent = 'Sending…';
     deliver(req).then(function (ok) {
+      if (lastErr === 'cooldown') { $('go').textContent = 'Send my request'; startLock(Date.now()); return; }
       $('rJob').textContent = job.label;
       $('rNum').textContent = n.replace(/(\d{3})(\d{3})(\d{3})/, '$1 $2 $3');
       $('rDet').textContent = detail || '-';
@@ -206,7 +236,7 @@ input:focus-visible, button:focus-visible { outline: 3px solid var(--blue); outl
       $('formView').hidden = true; $('doneView').hidden = false;
       $('go').textContent = 'Send my request';
       window.scrollTo(0, 0);
-      if (ok) watch(req.id);
+      if (ok) { setLast({ id: req.id, at: Date.now() }); startLock(Date.now()); watch(req.id); }
     });
   });
 
