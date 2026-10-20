@@ -1,0 +1,2361 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>
+<title>MoMo Agent Desk</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@500;600&family=Hanken+Grotesk:wght@400;500;600&display=swap">
+<style>
+/* Layout: four tabs (Desk, Cash, Notes, Settings). The Desk is a guided flow: job, then customer, then amount. A sticky job banner stays on screen, and one small floating Dial and Copy button can be dragged anywhere. */
+:root {
+  --bg: #eef0ea;
+  --surface: #fbfbf8;
+  --ink: #17231f;
+  --muted: #5d6b65;
+  --line: #d3d9d0;
+  --accent: #0a7a57;
+  --accent-ink: #ffffff;
+  --accent-soft: #d9efe5;
+  --warn: #a4471a;
+  --scrim: rgba(8, 14, 11, 0.62);
+  --toast-bg: #17231f;
+  --toast-ink: #e9f3ee;
+  --c-deposit: #0a7a57;
+  --c-withdraw: #c2410c;
+  --c-airtime: #1f5fbf;
+  --c-float: #6b3fb8;
+  --c-gooddeal: #8f6200;
+  --c-balance: #1f6f80;
+  --c-history: #4b5a66;
+  --c-emergency: #c1121f;
+  --job: var(--c-deposit);
+  --font-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Hanken Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "Courier New", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1814; --surface: #17231e; --ink: #e8f0ec; --muted: #94a69d; --line: #2a3a33;
+    --accent: #3ccf9b; --accent-ink: #06231a; --accent-soft: #1b3a2e; --warn: #f0a070;
+    --toast-bg: #e8f0ec; --toast-ink: #0f1814;
+    --c-deposit: #3ccf9b; --c-withdraw: #ffa05c; --c-airtime: #7db0ff; --c-float: #bf9fff;
+    --c-gooddeal: #f2c35c; --c-balance: #62c8da; --c-history: #a5b7c3; --c-emergency: #ff6b7a; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1814; --surface: #17231e; --ink: #e8f0ec; --muted: #94a69d; --line: #2a3a33;
+  --accent: #3ccf9b; --accent-ink: #06231a; --accent-soft: #1b3a2e; --warn: #f0a070;
+  --toast-bg: #e8f0ec; --toast-ink: #0f1814;
+  --c-deposit: #3ccf9b; --c-withdraw: #ffa05c; --c-airtime: #7db0ff; --c-float: #bf9fff;
+  --c-gooddeal: #f2c35c; --c-balance: #62c8da; --c-history: #a5b7c3; --c-emergency: #ff6b7a; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font-family: var(--font-body); font-size: 16px; line-height: 1.45;
+  padding-block: 16px 120px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 520px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+.panel { display: flex; flex-direction: column; gap: 16px; }
+.head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+h1 { font-family: var(--font-display); font-size: 1.5rem; line-height: 1.1; margin: 0; font-weight: 700; letter-spacing: -0.01em; text-wrap: balance; }
+.label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.09em; color: var(--muted); font-weight: 600; margin: 0 0 8px; }
+.rowhead { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.rowhead .label { margin: 0; }
+.neg, .low { color: var(--warn); }
+
+.eye { width: 46px; height: 46px; border-radius: 50%; border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; display: grid; place-items: center; flex: none; }
+.eye svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.eye[aria-pressed="false"] { color: var(--muted); }
+
+.tabs { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; background: var(--surface); border: 1.5px solid var(--line); border-radius: 12px; padding: 4px; }
+.tab { font: 600 0.74rem var(--font-body); padding: 0; min-height: 42px; border: 0; border-radius: 9px; background: none; color: var(--muted); cursor: pointer; position: relative; min-width: 0; }
+.tab[aria-selected="true"] { background: var(--ink); color: var(--bg); }
+.tab .dot { position: absolute; top: 6px; right: 8px; width: 9px; height: 9px; border-radius: 50%; background: var(--warn); }
+
+.balstrip { display: flex; align-items: center; gap: 4px; background: var(--surface); border: 1.5px solid var(--line); border-radius: 12px; padding: 3px 5px 3px 0; }
+.balmain { flex: 1; min-width: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px; text-align: left; background: none; border: 0; padding: 6px 8px 6px 14px; cursor: pointer; color: var(--ink); font: inherit; }
+.balmain small { display: block; font: 600 0.64rem var(--font-body); text-transform: uppercase; letter-spacing: 0.09em; color: var(--muted); }
+.balmain b { font: 600 1.05rem var(--font-mono); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.balmain i { grid-column: 1 / -1; font-style: normal; font-size: 0.8rem; color: var(--warn); font-weight: 600; }
+.eye.sm { width: 40px; height: 40px; }
+.eyerow { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; font-size: 0.9rem; color: var(--muted); }
+
+.types { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.type {
+  font: 600 0.8rem var(--font-display); min-height: 52px; border-radius: 10px; border: 1.5px solid var(--line); border-bottom: 5px solid var(--j);
+  background: var(--surface); color: var(--ink); cursor: pointer; padding: 5px 1px; min-width: 0;
+}
+.type[aria-pressed="true"] { background: var(--j); border-color: var(--j); color: var(--accent-ink); }
+.type small { display: block; font: 500 0.58rem var(--font-mono); opacity: 0.75; margin-top: 1px; }
+
+.banner {
+  position: sticky; top: calc(env(safe-area-inset-top, 0px) + 6px); z-index: 15;
+  background: var(--job); color: var(--accent-ink); border-radius: 12px; padding: 9px 14px; display: flex; flex-direction: column; gap: 1px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18); cursor: pointer;
+}
+.bn-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.bn-name { font: 700 1.35rem var(--font-display); letter-spacing: -0.01em; line-height: 1.1; text-transform: uppercase; }
+.bn-fx { font: 600 0.72rem var(--font-body); opacity: 0.92; text-align: right; }
+.bn-code { font: 600 0.9rem var(--font-mono); opacity: 0.92; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.field { display: flex; flex-direction: column; gap: 8px; scroll-margin-top: 92px; }
+.field > label, .fl { font-size: 0.85rem; font-weight: 600; }
+.inputrow { display: flex; gap: 8px; }
+input[type="text"], input[type="tel"], textarea {
+  width: 100%; min-width: 0; min-height: 54px; border-radius: 10px; border: 1.5px solid var(--line);
+  background: var(--surface); color: var(--ink); padding: 0 14px; font: 500 1.25rem var(--font-mono);
+}
+input.plain, textarea { font: 500 1rem var(--font-body); min-height: 48px; }
+textarea { padding: 12px 14px; min-height: 84px; resize: vertical; }
+input::placeholder, textarea::placeholder { color: var(--muted); opacity: 0.6; }
+input:focus-visible, textarea:focus-visible, button:focus-visible, a:focus-visible { outline: 3px solid var(--job); outline-offset: 2px; }
+.hint { font-size: 0.82rem; color: var(--muted); min-height: 1.2em; }
+.hint.bad { color: var(--warn); }
+.hint.ok { color: var(--accent); }
+.words { font: 600 1rem var(--font-body); color: var(--ink); min-height: 1.4em; text-wrap: balance; }
+
+.btn {
+  font: 600 0.9rem var(--font-body); min-height: 54px; padding: 0 14px; border-radius: 10px;
+  border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; white-space: nowrap;
+}
+.btn.primary { background: var(--accent-soft); border-color: var(--accent); }
+.btn.slim { min-height: 44px; }
+.btn.danger { border-color: var(--warn); color: var(--warn); }
+.btn:disabled { cursor: default; }
+
+.seg { display: inline-flex; border: 1.5px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--surface); }
+.seg button { font: 600 0.85rem var(--font-body); min-height: 44px; padding: 0 14px; border: 0; background: none; color: var(--ink); cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+.seg.subseg button[aria-pressed="true"] { background: var(--warn); color: var(--bg); }
+.seg.full { display: flex; }
+.seg.full button { flex: 1; padding: 0 6px; }
+
+.amtgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.mini { margin: 0; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.09em; color: var(--muted); font-weight: 600; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.sv, .step { font: 600 0.92rem var(--font-mono); min-height: 48px; border-radius: 10px; cursor: pointer; min-width: 0; padding: 0 2px; font-variant-numeric: tabular-nums; }
+.sv { border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); }
+.step { border: 1.5px solid var(--accent); background: var(--accent-soft); color: var(--ink); }
+.sv:active, .step:active { filter: brightness(0.92); }
+.col.sub .step { border-color: var(--warn); background: var(--surface); color: var(--warn); }
+
+/* One-line strip of saved or matching customers */
+.strip { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; min-height: 0; }
+.strip::-webkit-scrollbar { display: none; }
+.sug {
+  flex: none; display: flex; flex-direction: column; align-items: flex-start; min-height: 46px; padding: 4px 12px; border-radius: 10px;
+  border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; text-align: left;
+}
+.sug.match { border: 1.5px dashed var(--accent); }
+.sug.near { border: 1.5px dashed var(--warn); }
+.sug b { font: 600 0.82rem var(--font-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 150px; }
+.sug span { font: 500 0.95rem var(--font-mono); }
+
+.contacts { display: flex; flex-wrap: wrap; gap: 8px; }
+.contact { display: flex; border-radius: 10px; border: 1.5px solid var(--line); background: var(--surface); overflow: hidden; max-width: 100%; }
+.contact .pick { font: 500 0.9rem var(--font-body); background: none; border: 0; color: var(--ink); padding: 6px 12px; text-align: left; cursor: pointer; min-height: 48px; min-width: 0; }
+.contact .pick b { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 170px; }
+.contact .pick span { font: 500 0.78rem var(--font-mono); color: var(--muted); }
+.contact .del { background: none; border: 0; border-left: 1.5px solid var(--line); color: var(--muted); width: 44px; font-size: 1.2rem; cursor: pointer; }
+.empty { color: var(--muted); font-size: 0.9rem; margin: 0; }
+.linkbtn { background: none; border: 0; color: var(--accent); font: 600 0.85rem var(--font-body); cursor: pointer; min-height: 36px; padding: 0 4px; }
+.note { font-size: 0.8rem; color: var(--muted); margin: 0; }
+
+.cards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.bal { background: var(--surface); border: 1.5px solid var(--line); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 6px; min-width: 0; align-items: flex-start; }
+.bal .bigv { font: 600 1.4rem var(--font-mono); overflow-wrap: anywhere; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.bal .unit { font-size: 0.75rem; color: var(--muted); margin-top: -4px; }
+.panelbox { background: var(--surface); border: 1.5px solid var(--line); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+.list { background: var(--surface); border: 1.5px solid var(--line); border-radius: 14px; padding: 2px 14px; }
+.row { display: flex; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.row:last-child { border-bottom: 0; }
+.rdot { width: 10px; height: 10px; border-radius: 50%; flex: none; background: var(--muted); }
+.rtime { font: 500 0.78rem var(--font-mono); color: var(--muted); width: 42px; flex: none; }
+.rmain { flex: 1; min-width: 0; }
+.rmain b { display: block; font-weight: 600; overflow-wrap: anywhere; }
+.rmain span { display: block; font-size: 0.8rem; color: var(--muted); overflow-wrap: anywhere; }
+.racts { display: flex; flex-direction: column; gap: 4px; flex: none; }
+.rbtn { min-width: 44px; min-height: 40px; border: 1.5px solid var(--line); background: var(--surface); color: var(--muted); border-radius: 10px; cursor: pointer; font: 600 0.85rem var(--font-body); flex: none; padding: 0 8px; }
+.rbtn.armed { border-color: var(--warn); color: var(--warn); }
+.sumline { font-size: 0.85rem; color: var(--muted); margin: 0; }
+.daynav { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.daynav b { font: 700 1.1rem var(--font-display); }
+.tick { width: 44px; height: 44px; border-radius: 50%; border: 1.5px solid var(--line); background: var(--surface); color: transparent; cursor: pointer; flex: none; font-size: 1.1rem; }
+.tick[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.row.done .rmain { opacity: 0.55; }
+.settings-block { display: flex; flex-direction: column; gap: 8px; padding-bottom: 16px; border-bottom: 1.5px solid var(--line); }
+.settings-block:last-of-type { border-bottom: 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { font: 600 0.85rem var(--font-body); min-height: 44px; padding: 6px 14px; border-radius: 999px; border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; text-align: left; }
+.chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.pill.wa { background: #12803f; color: #ffffff; }
+.pill.alt { background: var(--surface); color: var(--ink); border: 2px solid var(--accent); }
+.btn.askbtn { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 58px; background: #12803f; border-color: #12803f; color: #ffffff; font-size: 1rem; }
+.btn.askbtn svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.btn.askbtn.open { background: var(--surface); color: #12803f; }
+#askPanel { border-color: #12803f; }
+.myjobs { display: flex; gap: 8px; overflow-x: auto; padding: 8px 0 2px; scrollbar-width: none; }
+.myjobs::-webkit-scrollbar { display: none; }
+.mytype { flex: none; min-height: 40px; padding: 0 14px; border-radius: 10px; border: 1.5px solid var(--line); border-bottom: 4px solid var(--j, var(--line)); background: var(--surface); color: var(--ink); font: 600 0.85rem var(--font-display); cursor: pointer; }
+.mytype.add { border: 1.5px dashed var(--muted); color: var(--muted); }
+.mytype[aria-pressed="true"] { background: var(--j); border-color: var(--j); color: var(--accent-ink); }
+.swatches { display: flex; flex-wrap: wrap; gap: 10px; }
+.swatch { width: 44px; height: 44px; border-radius: 50%; border: 3px solid transparent; background: var(--swl); cursor: pointer; }
+.swatch[aria-pressed="true"] { border-color: var(--ink); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .swatch { background: var(--swd); } }
+:root[data-theme="dark"] .swatch { background: var(--swd); }
+.switch { width: 60px; height: 34px; border-radius: 999px; border: 1.5px solid var(--line); background: var(--line); position: relative; cursor: pointer; flex: none; padding: 0; }
+.switch .knob { position: absolute; top: 3px; left: 3px; width: 26px; height: 26px; border-radius: 50%; background: var(--surface); box-shadow: 0 1px 3px rgba(0,0,0,0.3); transition: transform 0.15s; }
+.switch[aria-checked="true"] { background: var(--accent); border-color: var(--accent); }
+.switch[aria-checked="true"] .knob { transform: translateX(26px); }
+.pill.wa[aria-disabled="true"] { background: var(--line); color: var(--muted); pointer-events: none; }
+
+.outbox { display: flex; flex-direction: column; }
+.outrow { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 0.9rem; }
+.outrow:last-child { border-bottom: 0; }
+.outrow b { font: 600 1rem var(--font-mono); text-align: right; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.outrow.strong { font-weight: 600; }
+.outrow.strong b { font-size: 1.2rem; color: var(--accent); }
+.outrow.bad b { color: var(--warn); }
+.kdisp { background: var(--bg); border: 1.5px solid var(--line); border-radius: 10px; padding: 10px 14px; min-height: 76px; display: flex; flex-direction: column; align-items: flex-end; justify-content: center; gap: 2px; overflow: hidden; }
+.kexp { font: 500 1rem var(--font-mono); color: var(--muted); overflow-wrap: anywhere; text-align: right; }
+.kres { font: 600 1.7rem var(--font-mono); overflow-wrap: anywhere; text-align: right; min-height: 1.2em; }
+.kpad { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.key { font: 600 1.15rem var(--font-mono); min-height: 54px; border-radius: 10px; border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; padding: 0; }
+.key:active { filter: brightness(0.92); }
+.key.op { background: var(--accent-soft); border-color: var(--accent); }
+.key.eq { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); grid-row: span 2; }
+.key.clr { color: var(--warn); border-color: var(--warn); }
+
+/* Floating, draggable Dial + Copy */
+.fab {
+  position: fixed; z-index: 25; left: 0; top: 0; display: flex; align-items: stretch; border-radius: 999px; background: var(--job); color: var(--accent-ink);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.32); touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+}
+.fdial { display: flex; align-items: center; gap: 8px; padding: 0 18px 0 22px; min-height: 58px; color: inherit; text-decoration: none; font: 700 1.2rem var(--font-display); border-radius: 999px 0 0 999px; }
+.fdial svg { width: 22px; height: 22px; fill: currentColor; }
+.fcopy {
+  border: 0; background: none; color: inherit; font: 600 0.82rem var(--font-body); padding: 0 16px 0 14px; border-radius: 0 999px 999px 0; cursor: pointer;
+  border-left: 1.5px solid rgba(128, 128, 128, 0.55); border-left-color: color-mix(in srgb, currentColor 40%, transparent);
+}
+.fab.off { background: var(--line); color: var(--muted); box-shadow: none; }
+.fab.off .fdial { pointer-events: none; }
+.toast {
+  position: fixed; z-index: 60; left: 50%; transform: translateX(-50%); top: calc(env(safe-area-inset-top, 0px) + 10px);
+  background: var(--toast-bg); color: var(--toast-ink); font-size: 0.85rem; padding: 8px 14px; border-radius: 999px; max-width: 90vw; text-align: center;
+}
+
+.overlay {
+  position: fixed; inset: 0; z-index: 50; background: var(--scrim); display: flex; align-items: flex-end; justify-content: center;
+  padding: 0 max(16px, env(safe-area-inset-right, 0px)) calc(16px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+}
+.sheet { background: var(--surface); border-radius: 18px; padding: 20px; width: 100%; max-width: 520px; display: flex; flex-direction: column; gap: 12px; max-height: 92%; overflow-y: auto; }
+.sheet h2 { font: 700 1.2rem var(--font-display); margin: 0; }
+.sheet h2.warnh { color: var(--warn); }
+.sheet .big { font: 600 2rem var(--font-mono); line-height: 1.1; overflow-wrap: anywhere; }
+.sheet p { margin: 0; color: var(--muted); }
+.pill {
+  display: inline-flex; align-items: center; justify-content: center; min-height: 58px; padding: 0 24px; border-radius: 999px; text-decoration: none;
+  background: var(--job); color: var(--accent-ink); font: 700 1.15rem var(--font-display); border: 0; cursor: pointer; width: 100%;
+}
+.reqnote { display: flex; gap: 10px; align-items: center; justify-content: space-between; background: var(--accent-soft); border: 1.5px dashed var(--accent); border-radius: 10px; padding: 8px 12px; font-size: 0.9rem; font-weight: 600; }
+.reqnote button { background: none; border: 0; color: var(--muted); font-size: 1.3rem; min-width: 36px; min-height: 36px; cursor: pointer; }
+.ireq { font: 600 1.05rem var(--font-body); color: var(--ink); }
+.irow { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.irow span { color: var(--muted); }
+.irow b { text-align: right; font-family: var(--font-mono); overflow-wrap: anywhere; }
+#incoming { z-index: 60; }
+.iedit { display: flex; flex-direction: column; gap: 10px; }
+.iedit .field { gap: 4px; }
+.iedit select { width: 100%; min-height: 50px; border-radius: 10px; border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); padding: 0 12px; font: 600 1rem var(--font-body); }
+.iedit input { font-size: 1.15rem; }
+.iedit .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.icode { font: 600 0.95rem var(--font-mono); background: var(--accent-soft); border-radius: 10px; padding: 10px 12px; overflow-wrap: anywhere; }
+.iedited { font-size: 0.8rem; font-weight: 600; color: var(--accent); min-height: 1.1em; }
+.iqueue { display: flex; flex-direction: column; gap: 6px; }
+.iqueue .qhead { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.09em; color: var(--muted); font-weight: 600; }
+.iqueue .qitem { display: flex; align-items: center; gap: 8px; text-align: left; min-height: 46px; padding: 6px 12px; border-radius: 10px; border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; font: 600 0.88rem var(--font-body); }
+.iqueue .qitem .qdot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.iqueue .qitem .qtx { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.iqueue .qitem .qgo { font-size: 0.75rem; color: var(--muted); flex: none; }
+.iqueue .qitem.twin { border-color: var(--warn); }
+.itwin { display: flex; flex-direction: column; gap: 8px; border: 1.5px solid var(--warn); border-radius: 10px; padding: 10px 12px; font-size: 0.88rem; font-weight: 600; color: var(--warn); }
+#iDial { text-decoration: none; }
+#iDial[aria-disabled="true"], #iYes:disabled { opacity: 0.4; pointer-events: none; }
+#linkState { font-size: 0.75rem; color: var(--muted); }
+#linkState.on { color: var(--accent); }
+@media (prefers-reduced-motion: no-preference) { .type, .sv, .step, .btn, .tab { transition: background 0.12s; } }
+</style>
+
+<div class="wrap">
+  <header class="head">
+    <h1>MoMo Agent Desk</h1><span id="linkState"></span>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <button class="tab" id="tabbtn-desk" role="tab" aria-selected="true" type="button">Desk</button>
+    <button class="tab" id="tabbtn-cash" role="tab" aria-selected="false" type="button">Cash<span class="dot" id="cashDot" hidden></span></button>
+    <button class="tab" id="tabbtn-history" role="tab" aria-selected="false" type="button">History</button>
+    <button class="tab" id="tabbtn-notes" role="tab" aria-selected="false" type="button">Notes</button>
+    <button class="tab" id="tabbtn-calc" role="tab" aria-selected="false" type="button">Calc</button>
+    <button class="tab" id="tabbtn-settings" role="tab" aria-selected="false" type="button">Settings</button>
+  </nav>
+
+  <!-- DESK -->
+  <div class="panel" id="tab-desk">
+    <div class="balstrip" id="balStrip">
+      <button class="balmain" id="balMain" type="button" aria-label="Open Cash tab">
+        <span><small>Cash in hand</small><b id="bsCash">0</b></span>
+        <span><small>Float (SIM)</small><b id="bsFloat">0</b></span>
+        <i id="bsPend" hidden></i>
+      </button>
+      <button class="eye sm" id="eyeDesk" type="button" aria-pressed="true" aria-label="Hide cash and float from the Desk"></button>
+    </div>
+
+    <section id="typesSec">
+      <div class="types" id="types"></div>
+      <div class="myjobs" id="myjobs"></div>
+    </section>
+
+    <div class="banner" id="banner" aria-live="polite" role="button" tabindex="0" aria-label="Current job. Tap to change the job.">
+      <div class="bn-top"><div class="bn-name" id="bnName">Deposit</div><div class="bn-fx" id="bnFx"></div></div>
+      <div class="bn-code" id="bnCode"></div>
+    </div>
+
+    <div class="reqnote" id="reqNote" hidden><span id="reqNoteTx"></span><button type="button" id="reqNoteX" aria-label="Dismiss note">×</button></div>
+
+    <div class="field" id="numField">
+      <label for="num">Customer number</label>
+      <div class="inputrow">
+        <input id="num" type="tel" inputmode="numeric" autocomplete="off" placeholder="6XXXXXXXX" maxlength="16">
+        <button class="btn" id="clrNum" type="button">Clear</button>
+        <button class="btn primary" id="saveBtn" type="button">Save</button>
+      </div>
+      <input id="nameBox" class="plain" type="text" autocomplete="off" placeholder="Customer name" maxlength="40" hidden>
+      <div class="hint" id="numHint"></div>
+      <div class="hint bad" id="sugCap" hidden>Close to a saved number. Check the digits.</div>
+      <div class="strip" id="strip"></div>
+    </div>
+
+    <div class="field" id="amtField">
+      <label for="amt" id="amtLabel">Amount (FCFA)</label>
+      <div class="inputrow">
+        <input id="amt" type="text" inputmode="numeric" autocomplete="off" placeholder="5,000" maxlength="13">
+        <button class="btn" id="clrAmt" type="button">Clear</button>
+      </div>
+      <div class="hint" id="amtHint"></div>
+      <div class="words" id="amtWords"></div>
+      <div class="hint bad" id="amtWarn"></div>
+      <div id="deskPad"></div>
+    </div>
+  </div>
+
+  <!-- CASH -->
+  <div class="panel" id="tab-cash" hidden>
+    <section>
+      <div class="eyerow"><button class="eye" id="eyeCash" type="button" aria-pressed="true" aria-label="Show or hide cash and float on the Desk"></button><span id="eyeCashLabel"></span></div>
+      <p class="label">Where your money is</p>
+      <div class="cards">
+        <div class="bal"><p class="label" style="margin:0">Cash in hand</p><div class="bigv" id="vCash">0</div><div class="unit">FCFA</div><button class="btn slim" type="button" data-edit="cash">Set</button></div>
+        <div class="bal"><p class="label" style="margin:0">Float (SIM)</p><div class="bigv" id="vFloat">0</div><div class="unit">FCFA</div><button class="btn slim" type="button" data-edit="float">Set</button></div>
+      </div>
+      <p class="note" id="setupNote" style="margin-top:10px">Start by tapping Set on each card and entering what you have right now. After that, every recorded transaction updates both.</p>
+    </section>
+
+    <section class="panelbox" id="editor" hidden>
+      <label class="fl" for="editVal" id="editLabel">Set cash to</label>
+      <input id="editVal" type="text" inputmode="numeric" autocomplete="off" maxlength="14" placeholder="0">
+      <div class="inputrow">
+        <button class="btn primary" id="editSave" type="button" style="flex:1">Save</button>
+        <button class="btn" id="editCancel" type="button">Cancel</button>
+      </div>
+    </section>
+
+    <section id="pendSec" hidden>
+      <p class="label">Waiting for you to confirm</p>
+      <div class="list" id="pendList"></div>
+    </section>
+
+    <button class="btn askbtn" id="askToggle" type="button" aria-expanded="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.6 8.6 0 0 1-3.6-.8L3 21l1.9-5.3A8.4 8.4 0 1 1 21 11.5z"/><path d="M8.5 11.5h7M12.5 8.5l3 3-3 3"/></svg>
+      <span id="askToggleText">Ask someone for cash or float</span>
+    </button>
+    <section class="panelbox" id="askPanel" hidden>
+      <p class="label" style="margin:0">Ask on WhatsApp</p>
+      <div class="seg full" id="askKind"><button type="button" id="askCash" aria-pressed="true">Cash</button><button type="button" id="askFloat" aria-pressed="false">Float</button></div>
+      <div class="field">
+        <label for="askName">Who to ask</label>
+        <button class="btn" id="askPick" type="button" style="width:100%">Open phone contacts</button>
+        <input id="askName" class="plain" type="text" autocomplete="off" placeholder="Search by name, or type a name" maxlength="40">
+        <div class="inputrow"><input id="askNum" type="tel" inputmode="numeric" autocomplete="off" placeholder="Number, 6XXXXXXXX" maxlength="18"><button class="btn" id="askNumClr" type="button">Clear</button></div>
+        <div class="hint" id="askNumHint"></div>
+        <div class="contacts" id="helpers"></div>
+      </div>
+      <div class="field">
+        <label for="askAmt">How much (FCFA)</label>
+        <input id="askAmt" type="text" inputmode="numeric" autocomplete="off" placeholder="20,000" maxlength="13">
+        <div class="words" id="askWords"></div>
+      </div>
+      <div class="field">
+        <span class="fl">Message</span>
+        <div class="chips" id="askPresets"></div>
+        <textarea id="askMsg" maxlength="500"></textarea>
+        <button class="linkbtn" id="askReset" type="button" style="align-self:flex-start">Reset message</button>
+      </div>
+      <a class="pill wa" id="askGo" href="#" target="_blank" rel="noopener" aria-disabled="true">Open WhatsApp</a>
+      <button class="btn" id="askCopy" type="button">Copy message</button>
+      <p class="note">After you send it, the app asks if they sent it, then adds it to your cash or float.</p>
+    </section>
+
+    <section class="panelbox">
+      <p class="label" style="margin:0">Add or remove money</p>
+      <div class="inputrow" style="flex-wrap:wrap">
+        <div class="seg" id="adjKindSeg"><button type="button" id="adjCash" aria-pressed="true">Cash</button><button type="button" id="adjFloat" aria-pressed="false">Float</button></div>
+        <div class="seg" id="adjSignSeg"><button type="button" id="adjAdd" aria-pressed="true">Add</button><button type="button" id="adjRemove" aria-pressed="false">Remove</button></div>
+      </div>
+      <input id="adjAmt" type="text" inputmode="numeric" autocomplete="off" maxlength="14" placeholder="Amount, e.g. 50,000">
+      <input id="adjNote" class="plain" type="text" autocomplete="off" maxlength="60" placeholder="Reason (optional), e.g. bank top-up">
+      <button class="btn primary" id="adjApply" type="button">Apply</button>
+    </section>
+
+  </div>
+
+  <!-- HISTORY -->
+  <div class="panel" id="tab-history" hidden>
+    <div class="daynav">
+      <button class="btn slim" id="cPrev" type="button" aria-label="Previous day">&lsaquo;</button>
+      <b id="cLabel">Today</b>
+      <button class="btn slim" id="cNext" type="button" aria-label="Next day">&rsaquo;</button>
+    </div>
+    <div class="inputrow"><input id="cSearch" class="plain" type="text" autocomplete="off" placeholder="Search name, number or amount" maxlength="40"><button class="btn slim" id="cSearchClr" type="button" style="min-height:48px">Clear</button></div>
+    <p class="sumline" id="todaySum"></p>
+    <div class="list" id="todayList"></div>
+    <p class="empty" id="noToday">Nothing recorded this day.</p>
+    <div style="display:flex;justify-content:center"><button class="linkbtn" id="todayMore" type="button" hidden>Show all</button></div>
+  </div>
+
+  <!-- NOTES -->
+  <div class="panel" id="tab-notes" hidden>
+    <div class="daynav">
+      <button class="btn slim" id="dayPrev" type="button" aria-label="Previous day">&lsaquo;</button>
+      <b id="dayLabel">Today</b>
+      <button class="btn slim" id="dayNext" type="button" aria-label="Next day">&rsaquo;</button>
+    </div>
+    <section class="panelbox">
+      <label class="fl" for="noteText">New note</label>
+      <textarea id="noteText" placeholder="e.g. Paul sent 10,000 to my number, for his rent" maxlength="400"></textarea>
+      <div class="inputrow">
+        <input id="noteAmt" type="text" inputmode="numeric" autocomplete="off" maxlength="14" placeholder="Amount (optional)">
+        <button class="btn primary" id="noteAdd" type="button">Add note</button>
+      </div>
+    </section>
+    <section>
+      <p class="sumline" id="noteTotal" style="margin-bottom:8px"></p>
+      <div class="list" id="notes"></div>
+      <p class="empty" id="noNotes">No notes for this day.</p>
+    </section>
+  </div>
+
+  <!-- CALC -->
+  <div class="panel" id="tab-calc" hidden>
+    <p class="note" id="rateNote"></p>
+    <section class="panelbox">
+      <div class="rowhead"><p class="label" style="margin:0">Change to give</p><button class="linkbtn" type="button" data-clear="cgGiven,cgDue">Clear</button></div>
+      <input id="cgGiven" type="text" inputmode="numeric" autocomplete="off" maxlength="14" placeholder="Customer gave, e.g. 10,000">
+      <input id="cgDue" type="text" inputmode="numeric" autocomplete="off" maxlength="14" placeholder="Amount due, e.g. 7,500">
+      <div class="outbox" id="cgOut"></div>
+    </section>
+    <section class="panelbox">
+      <div class="rowhead"><p class="label" style="margin:0">Charge and total</p><button class="linkbtn" type="button" data-clear="chAmt">Clear</button></div>
+      <input id="chAmt" type="text" inputmode="numeric" autocomplete="off" maxlength="14" placeholder="Amount, e.g. 50,000">
+      <div class="outbox" id="chOut"></div>
+    </section>
+    <section class="panelbox">
+      <div class="rowhead"><p class="label" style="margin:0">Withdraw from phone balance</p><button class="linkbtn" type="button" data-clear="wdBal,wdAmt">Clear</button></div>
+      <input id="wdBal" type="text" inputmode="numeric" autocomplete="off" maxlength="14" placeholder="Client has in phone, e.g. 30,000">
+      <input id="wdAmt" type="text" inputmode="numeric" autocomplete="off" maxlength="14" placeholder="Client wants to withdraw, e.g. 40,000">
+      <div class="outbox" id="wdOut"></div>
+    </section>
+    <section class="panelbox">
+      <p class="label" style="margin:0">Calculator</p>
+      <div class="kdisp"><div class="kexp" id="kExp">0</div><div class="kres" id="kRes"></div></div>
+      <div class="kpad" id="kPad"></div>
+    </section>
+  </div>
+
+  <!-- SETTINGS -->
+  <div class="panel" id="tab-settings" hidden>
+    <div class="settings-block">
+      <span class="fl">Client requests</span>
+      <p class="note" id="linkNote">Requests sent from the client page arrive as a popup. Use the button to see what one looks like.</p>
+      <button class="btn" id="testReq" type="button">Send a test request</button>
+    </div>
+    <div class="settings-block">
+      <label class="fl" for="copyVal">Copied when you tap Dial</label>
+      <input id="copyVal" class="plain" type="text" autocomplete="off" placeholder="Nothing" maxlength="40">
+      <div class="hint">Long press in the MoMo menu to paste it. Leave empty to copy nothing.</div>
+    </div>
+    <div class="settings-block">
+      <div class="rowhead">
+        <span class="fl" id="askSwLabel">Ask if it went through</span>
+        <button type="button" class="switch" id="askSw" role="switch" aria-checked="true" aria-labelledby="askSwLabel"><span class="knob"></span></button>
+      </div>
+      <div class="hint" id="askSwHint"></div>
+    </div>
+    <div class="settings-block">
+      <div class="rowhead">
+        <span class="fl" id="dupSwLabel">Check for repeated transactions</span>
+        <button type="button" class="switch" id="dupSw" role="switch" aria-checked="true" aria-labelledby="dupSwLabel"><span class="knob"></span></button>
+      </div>
+      <div class="hint">When two transactions were done within 2 minutes of each other, you choose which ones really went through. This keeps your cash and float correct when you had to redo a failed transaction.</div>
+    </div>
+    <div class="settings-block">
+      <div class="rowhead">
+        <span class="fl" id="dupFzLabel">Also match near-misses</span>
+        <button type="button" class="switch" id="dupFz" role="switch" aria-checked="true" aria-labelledby="dupFzLabel"><span class="knob"></span></button>
+      </div>
+      <div class="hint">On: numbers up to 2 digits different, similar amounts, and different jobs (for example a Deposit and then a Float to the same person) count as repeats. Off: only the same job, number and amount count.</div>
+    </div>
+    <div class="settings-block">
+      <span class="fl">Low balance warning</span>
+      <div class="hint">The balance turns orange when it falls below these amounts. Leave empty for no warning.</div>
+      <div class="inputrow">
+        <input id="lowCash" class="plain" type="text" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="Cash below">
+        <input id="lowFloat" class="plain" type="text" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="Float below">
+      </div>
+    </div>
+    <div class="settings-block">
+      <label class="fl" for="chargePct">Charge percentage</label>
+      <input id="chargePct" class="plain" type="text" inputmode="decimal" autocomplete="off" maxlength="6" placeholder="1.25">
+      <div class="hint">Used by the charge and withdraw calculators in the Calc tab. Default 1.25.</div>
+    </div>
+    <div class="settings-block">
+      <span class="fl">Wait before asking questions</span>
+      <div class="seg full" id="delaySeg"></div>
+      <div class="hint">After you open the app or come back from dialing, the app waits this long, and until you stop tapping, before asking "Did it go through?" or about repeated transactions. This way it does not interrupt you while you are busy.</div>
+    </div>
+    <div class="settings-block">
+      <span class="fl">Dial button</span>
+      <div class="hint">Drag the Dial and Copy button anywhere on the Desk screen. It stays where you leave it.</div>
+      <button class="btn slim" id="resetFab" type="button" style="align-self:flex-start">Reset position</button>
+    </div>
+    <div class="settings-block">
+      <div class="rowhead"><span class="fl">My jobs</span><button class="linkbtn" id="jobNew" type="button">+ New job</button></div>
+      <div class="hint">Make your own job from any USSD code. Use {number} and {amount} where the customer number and amount go. Your jobs appear under the job buttons on the Desk.</div>
+      <div class="list" id="jobsList"></div>
+      <p class="empty" id="noJobs">No jobs of your own yet.</p>
+    </div>
+    <div class="settings-block">
+      <div class="rowhead"><span class="fl">Saved customers</span><button class="linkbtn" id="toggleAll" type="button" hidden>Show all</button></div>
+      <div class="contacts" id="contacts"></div>
+      <p class="empty" id="noContacts">No customers yet. Numbers are saved automatically each time you dial. On the Desk, tap Save to give one a name.</p>
+    </div>
+    <div class="settings-block">
+      <span class="fl">Backup</span>
+      <div class="hint">Everything is stored on this phone in this browser. Copy a backup now and then and keep it in a WhatsApp chat with yourself or in a note. To restore, paste it below and tap Restore.</div>
+      <textarea id="backupBox" class="plain" placeholder="Backup text appears here. Paste a backup here to restore." style="font:500 0.8rem var(--font-mono);min-height:90px"></textarea>
+      <div class="inputrow">
+        <button class="btn primary" id="backupCopy" type="button" style="flex:1">Copy backup</button>
+        <button class="btn danger" id="backupRestore" type="button">Restore</button>
+      </div>
+    </div>
+    <p class="note">Your PIN is entered in the MoMo menu after the code runs. If Dial does nothing, tap Copy next to it and paste the code in the phone dialer. On the Infinix Note 50, set SIM 2 as the default calling SIM, or choose SIM 2 when the phone asks.</p>
+  </div>
+</div>
+
+<div class="overlay" id="incoming" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="iTitle">
+    <h2 id="iTitle">New client request</h2>
+    <p id="iMore" hidden></p>
+    <div class="itwin" id="iTwin" hidden><span id="iTwinTx"></span><button class="btn slim danger" id="iTwinBtn" type="button" hidden>Reject the repeats</button></div>
+    <div class="ireq" id="iAsk"></div>
+    <div class="iedit">
+      <div class="field"><label for="iJobSel">Job</label><select id="iJobSel"></select></div>
+      <div class="field" id="iFloatBox" hidden><label for="iFloatSel">Float</label>
+        <select id="iFloatSel"><option value="send_to_client">Send me float</option><option value="receive_from_client">They send float, I give cash</option></select></div>
+      <div class="field" id="iBundleBox" hidden><label for="iBundleSel">Bundle</label>
+        <select id="iBundleSel"><option value="data">Data only</option><option value="call">Calls only</option><option value="call_data">Calls + data</option></select></div>
+      <div class="two">
+        <div class="field"><label for="iNumIn">Number</label><input id="iNumIn" class="" type="tel" inputmode="numeric" autocomplete="off" maxlength="16"></div>
+        <div class="field"><label for="iAmtIn" id="iAmtLbl">Amount (FCFA)</label><input id="iAmtIn" type="text" inputmode="numeric" autocomplete="off" maxlength="13"></div>
+      </div>
+      <div class="field" id="iCashBox" hidden><label for="iCashIn">Cash you give them (FCFA)</label><input id="iCashIn" type="text" inputmode="numeric" autocomplete="off" maxlength="13"><div class="hint">Their float goes into your float. This cash comes out of your cash.</div></div>
+      <div class="hint" id="iHint"></div>
+      <div class="icode" id="iCode"></div>
+      <div class="iedited" id="iEdited"></div>
+    </div>
+    <a class="pill" id="iDial" href="#" aria-disabled="true" draggable="false">Dial</a>
+    <button class="pill" id="iYes" type="button" hidden>Accept. Wait for float</button>
+    <button class="btn" id="iNo" type="button">Reject</button>
+    <div class="iqueue" id="iQueue" hidden></div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" hidden></div>
+
+<div class="fab off" id="fab">
+  <a class="fdial" id="dial" href="#" aria-disabled="true" draggable="false">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1L6.6 10.8z"/></svg>
+    Dial
+  </a>
+  <button class="fcopy" id="copy" type="button" aria-label="Copy the code">Copy</button>
+</div>
+
+<div class="overlay" id="confirm" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="cTitle">
+    <h2 class="warnh" id="cTitle">Large amount. Are you sure?</h2>
+    <div class="big" id="cAmt"></div>
+    <div class="words" id="cWords"></div>
+    <p id="cDetail"></p>
+    <a class="pill" id="cGo" href="#">Yes, dial</a>
+    <button class="btn" id="cCancel" type="button">Cancel</button>
+  </div>
+</div>
+
+<div class="overlay" id="pend" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="pTitle">
+    <h2 id="pTitle">Did it go through?</h2>
+    <div class="big" id="pAmt"></div>
+    <div class="words" id="pWords"></div>
+    <p id="pDetail"></p>
+    <p id="pFx"></p>
+    <button class="pill" id="pYes" type="button">Yes, record it</button>
+    <button class="btn danger" id="pNo" type="button">No, discard</button>
+    <button class="btn" id="pLater" type="button">Decide later</button>
+  </div>
+</div>
+
+<div class="overlay" id="dup" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="dTitle">
+    <h2 class="warnh" id="dTitle">Similar transactions</h2>
+    <p>These look alike (same or close number and amount, within 2 minutes of each other). Tick the ones that really went through. Unticked ones will not count, and any already recorded will be removed.</p>
+    <div class="list" id="dupList"></div>
+    <div class="hint" id="dupFx"></div>
+    <button class="pill" id="dApply" type="button">Apply</button>
+    <button class="btn" id="dAll" type="button">They all went through</button>
+    <button class="btn" id="dLater" type="button">Decide later</button>
+  </div>
+</div>
+
+<div class="overlay" id="jobSheet" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="jobTitle">
+    <h2 id="jobTitle">New job</h2>
+    <div class="field">
+      <label for="jobName">Job name</label>
+      <input id="jobName" class="plain" type="text" autocomplete="off" maxlength="14" placeholder="e.g. Pay bill">
+    </div>
+    <div class="field">
+      <label for="jobTpl">USSD code</label>
+      <input id="jobTpl" class="plain" type="text" inputmode="tel" autocomplete="off" maxlength="60" placeholder="*126*3*{number}*{amount}#" style="font-family:var(--font-mono)">
+      <div class="inputrow">
+        <button class="btn slim" id="jobInsNum" type="button" style="flex:1">Insert {number}</button>
+        <button class="btn slim" id="jobInsAmt" type="button" style="flex:1">Insert {amount}</button>
+      </div>
+      <div class="hint" id="jobPreview"></div>
+    </div>
+    <div class="field">
+      <span class="fl">Color</span>
+      <div class="swatches" id="jobColors"></div>
+    </div>
+    <div class="field">
+      <span class="fl">Cash and float</span>
+      <div class="seg full" id="jobEffect">
+        <button type="button" id="jobFxNone" aria-pressed="true">No change</button>
+        <button type="button" id="jobFxUp" aria-pressed="false">Cash up</button>
+        <button type="button" id="jobFxDown" aria-pressed="false">Cash down</button>
+      </div>
+      <div class="hint" id="jobFxHint"></div>
+    </div>
+    <button class="pill" id="jobSave" type="button">Save job</button>
+    <button class="btn" id="jobCancel" type="button">Cancel</button>
+    <button class="btn danger" id="jobDelete" type="button" hidden>Delete job</button>
+  </div>
+</div>
+
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script>
+/* Supabase transport for the agent desk: sign-in, live requests, and sending back accept/reject. */
+(function () {
+  var C = window.MOMO_CONFIG;
+  if (!C || !window.supabase || /YOUR-/.test(C.url)) return;
+  var sb = window.supabase.createClient(C.url, C.key);
+  function login() {
+    return new Promise(function (resolve) {
+      var o = document.createElement('div');
+      o.style.cssText = 'position:fixed;inset:0;z-index:99;background:var(--bg,#fff);display:flex;align-items:center;justify-content:center;padding:20px;font-family:system-ui,sans-serif';
+      o.innerHTML = '<form style="width:100%;max-width:360px;display:flex;flex-direction:column;gap:12px;color:var(--ink,#000)"><h1 style="margin:0">Agent sign in</h1>' +
+        '<input id="lgE" type="email" autocomplete="username" placeholder="Email" style="font:500 1rem system-ui;min-height:50px;padding:0 12px;border-radius:10px;border:1.5px solid #8a948f">' +
+        '<input id="lgP" type="password" autocomplete="current-password" placeholder="Password" style="font:500 1rem system-ui;min-height:50px;padding:0 12px;border-radius:10px;border:1.5px solid #8a948f">' +
+        '<div id="lgM" style="min-height:1.2em;color:#c1121f;font-size:.9rem"></div>' +
+        '<button type="submit" style="min-height:52px;border:0;border-radius:10px;background:#0a7a57;color:#fff;font:700 1rem system-ui">Sign in</button></form>';
+      document.body.appendChild(o);
+      o.querySelector('form').addEventListener('submit', function (e) {
+        e.preventDefault();
+        sb.auth.signInWithPassword({ email: o.querySelector('#lgE').value.trim(), password: o.querySelector('#lgP').value }).then(function (r) {
+          if (r.error) { o.querySelector('#lgM').textContent = 'Wrong email or password.'; return; }
+          o.remove(); resolve(r.data.session);
+        });
+      });
+    });
+  }
+  function ensure() { return sb.auth.getSession().then(function (r) { return r.data.session || login(); }); }
+  window.MOMO_TRANSPORT = {
+    subscribe: function (cb) {
+      ensure().then(function () {
+        function pull() { sb.from('requests').select('*').eq('status', 'pending').order('t', { ascending: true }).then(function (r) { (r.data || []).forEach(cb); }); }
+        pull();
+        sb.channel('requests-in').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'requests' }, function (p) { cb(p.new); })
+          .subscribe(function (st) { if (st === 'SUBSCRIBED') pull(); });
+        /* The phone may sleep and miss live events, so catch up whenever the app comes back. */
+        document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') pull(); });
+        setInterval(function () { if (document.visibilityState === 'visible') pull(); }, 20000);
+      });
+    },
+    setStatus: function (id, st, fix) {
+      var u = { status: st };
+      if (fix) { u.job = fix.job; u.details = fix.details; u.num = fix.num; u.amt = fix.amt; u.edited = true; }
+      sb.from('requests').update(u).eq('id', id).then(function (r) { if (r.error) console.error(r.error); });
+    }
+  };
+})();
+</script>
+<script>
+(function () {
+  var UP = 'Cash up · Float down', DOWN = 'Cash down · Float up';
+  var TYPES = [
+    { id: 'deposit',  label: 'Deposit',   tag: '126*1', num: true,  amt: true,  track: true,  short: UP,   build: function (n, a) { return '*126*1*' + n + '*' + a + '#'; } },
+    { id: 'withdraw', label: 'Withdraw',  tag: '126*2', num: true,  amt: true,  track: true,  short: DOWN, dir: 'down', build: function (n, a) { return '*126*2*' + n + '*' + a + '#'; } },
+    { id: 'airtime',  label: 'Airtime',   tag: '126*4', num: true,  amt: true,  track: true,  short: UP,   build: function (n, a) { return '*126*4*' + n + '*' + a + '#'; } },
+    { id: 'float',    label: 'Float',     tag: '126*5*1', num: true, amt: true, track: true,  short: UP,   build: function (n, a) { return '*126*5*1*' + n + '*' + a + '#'; } },
+    { id: 'gooddeal', label: 'Good deal', tag: '126*7', num: true,  amt: true,  optAmt: true, track: true, short: UP, build: function (n) { return '*126*7*' + n + '#'; } },
+    { id: 'balance',  label: 'Balance',   tag: '126*7*1', num: false, amt: false, track: false, short: '', build: function () { return '*126*7*1#'; } },
+    { id: 'history',  label: 'Recent',    tag: '126*7*2', num: false, amt: false, track: false, short: '', build: function () { return '*126*7*2#'; } },
+    { id: 'emergency', label: 'Emergency', tag: '8404',   num: false, amt: false, track: false, short: 'MTN emergency', build: function () { return '8404'; } }
+  ];
+  /* ---------- your own jobs: a USSD code with {number} and {amount} placeholders ---------- */
+  var CUSTOM = [];
+  var PALETTE = [
+    { l: '#be185d', d: '#ff8fb8' }, { l: '#4338ca', d: '#a5a0ff' }, { l: '#5d7a0b', d: '#b7d95a' }, { l: '#0f766e', d: '#5eead4' },
+    { l: '#92400e', d: '#e0a96d' }, { l: '#a21caf', d: '#f0a3ff' }, { l: '#1e3a8a', d: '#93b4ff' }, { l: '#374151', d: '#cbd5e1' }
+  ];
+  function parseTpl(tpl) {
+    tpl = String(tpl || '').trim();
+    if (!tpl) return { ok: false, msg: 'Type the USSD code, for example *126*3*{number}*{amount}#' };
+    if (tpl.length > 60) return { ok: false, msg: 'That code is too long.' };
+    var rest = tpl.replace(/\{number\}/g, '').replace(/\{amount\}/g, '');
+    if (!rest) return { ok: false, msg: 'The code needs digits, * or # as well.' };
+    if (/[^0-9*#]/.test(rest)) return { ok: false, msg: 'Only digits, * and # are allowed, plus {number} and {amount}.' };
+    return { ok: true, hasNum: /\{number\}/.test(tpl), hasAmt: /\{amount\}/.test(tpl) };
+  }
+  function allTypes() { return TYPES.concat(CUSTOM); }
+  function rebuildCustom() {
+    CUSTOM = (state.jobs || []).map(function (j) {
+      var ps = parseTpl(j.tpl), fx = ps.hasAmt && j.effect !== 'none';
+      return {
+        id: j.id, label: j.name, tag: j.tpl, custom: true, num: ps.hasNum, amt: ps.hasAmt, track: fx, dir: j.effect === 'down' ? 'down' : 'up',
+        short: fx ? (j.effect === 'down' ? DOWN : UP) : '',
+        build: function (n, a) { return j.tpl.replace(/\{number\}/g, n).replace(/\{amount\}/g, a); }
+      };
+    });
+    var l = '', d = '';
+    (state.jobs || []).forEach(function (j) { var c = PALETTE[j.color] || PALETTE[0]; l += '--c-' + j.id + ':' + c.l + ';'; d += '--c-' + j.id + ':' + c.d + ';'; });
+    var st = document.getElementById('customStyle');
+    if (!st) { st = document.createElement('style'); st.id = 'customStyle'; document.head.appendChild(st); }
+    st.textContent = ':root{' + l + '}@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){' + d + '}}:root[data-theme="dark"]{' + d + '}';
+  }
+  var STATICS = [500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 500000, 1000000];
+  var STEPS = [50, 100, 500, 1000, 5000, 10000, 50000, 100000];
+  var BIG = 100000;
+  var DEFAULT_COPY = '00119';
+  var SHOW_LIMIT = 12;
+  var TABS = ['desk', 'cash', 'history', 'notes', 'calc', 'settings'];
+  var BACKUP_KEYS = ['momo.contacts', 'momo.bal', 'momo.ledger', 'momo.pending', 'momo.notes', 'momo.fab', 'momo.type', 'momo.copy', 'momo.auto', 'momo.showbal', 'momo.lowcash', 'momo.lowfloat', 'momo.helpers', 'momo.jobs', 'momo.dup', 'momo.dupfuzzy', 'momo.chargepct', 'momo.delay'];
+
+  var $ = function (id) { return document.getElementById(id); };
+  function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  function loadJSON(k, fb) { try { var v = JSON.parse(lsGet(k)); return v === null || v === undefined ? fb : v; } catch (e) { return fb; } }
+  function pad(n) { return n < 10 ? '0' + n : '' + n; }
+  function dkey(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+  function hhmm(ts) { var d = new Date(ts); return pad(d.getHours()) + ':' + pad(d.getMinutes()); }
+  function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+  function typeById(id) { return TYPES.concat(CUSTOM).filter(function (t) { return t.id === id; })[0]; }
+  function clamp01(v) { return Math.min(1, Math.max(0, isFinite(v) ? v : 0)); }
+
+  var state = {
+    type: 'deposit', contacts: [], mode: 'add', showAll: false, naming: false, copy: DEFAULT_COPY, auto: false, tab: 'desk',
+    bal: { cash: 0, float: 0, init: false }, ledger: [], pending: [], notes: [], noteDay: dkey(new Date()), cashDay: dkey(new Date()),
+    helpers: [], fab: null, editing: null, showAllToday: false, adjKind: 'cash', adjSign: 'add', showBal: true, lowCash: 0, lowFloat: 0
+  };
+  var currentCode = '', currentNum = '', currentAmt = '', lastNumOk = false;
+
+  state.jobs = loadJSON('momo.jobs', []); if (!Array.isArray(state.jobs)) state.jobs = [];
+  state.jobs = state.jobs.filter(function (j) { return j && /^c[a-z0-9]+$/.test(j.id || '') && typeof j.name === 'string' && parseTpl(j.tpl).ok; });
+  rebuildCustom();
+  state.contacts = loadJSON('momo.contacts', []);
+  if (!Array.isArray(state.contacts)) state.contacts = [];
+  state.contacts = state.contacts.filter(function (c) { return c && typeof c.num === 'string'; });
+  var b0 = loadJSON('momo.bal', null);
+  if (b0 && typeof b0.cash === 'number' && typeof b0.float === 'number') state.bal = { cash: b0.cash, float: b0.float, init: !!b0.init };
+  state.ledger = loadJSON('momo.ledger', []); if (!Array.isArray(state.ledger)) state.ledger = [];
+  state.pending = loadJSON('momo.pending', []); if (!Array.isArray(state.pending)) state.pending = [];
+  state.pending = state.pending.filter(function (p) { return p && (p.type === 'ask' || p.type === 'swap' || typeById(p.type)); });
+  state.helpers = loadJSON('momo.helpers', []); if (!Array.isArray(state.helpers)) state.helpers = [];
+  state.helpers = state.helpers.filter(function (h) { return h && typeof h.num === 'string'; });
+  state.notes = loadJSON('momo.notes', []); if (!Array.isArray(state.notes)) state.notes = [];
+  var f0 = loadJSON('momo.fab', null);
+  if (f0 && typeof f0.x === 'number' && typeof f0.y === 'number') state.fab = { x: clamp01(f0.x), y: clamp01(f0.y) };
+  var st = lsGet('momo.type'); if (typeById(st)) state.type = st;
+  var sc = lsGet('momo.copy'); if (sc !== null) state.copy = sc;
+  state.auto = lsGet('momo.auto') === '1';
+  state.showBal = lsGet('momo.showbal') !== '0';
+  state.dup = lsGet('momo.dup') !== '0';
+  state.dupFuzzy = lsGet('momo.dupfuzzy') !== '0';
+  var DELAYS = [0, 5, 10, 20];
+  var dl0 = lsGet('momo.delay'); state.askDelay = dl0 !== null && DELAYS.indexOf(Number(dl0)) > -1 ? Number(dl0) : 10;
+  function parsePct(v) { var n = parseFloat(String(v).replace(',', '.')); if (!isFinite(n) || n < 0) return 0; return Math.min(n, 100); }
+  state.chargePct = lsGet('momo.chargepct') !== null ? parsePct(lsGet('momo.chargepct')) : 1.25;
+  state.lowCash = Number(lsGet('momo.lowcash')) || 0;
+  state.lowFloat = Number(lsGet('momo.lowfloat')) || 0;
+
+  function cur() { return typeById(state.type); }
+  function persistContacts() { lsSet('momo.contacts', JSON.stringify(state.contacts)); }
+  function persistBal() { lsSet('momo.bal', JSON.stringify(state.bal)); }
+  function persistLedger() { lsSet('momo.ledger', JSON.stringify(state.ledger)); }
+  function persistPending() { lsSet('momo.pending', JSON.stringify(state.pending)); }
+  function persistNotes() { lsSet('momo.notes', JSON.stringify(state.notes)); }
+
+  function normNumber(raw) {
+    var d = String(raw).replace(/\D/g, '');
+    if (d.indexOf('237') === 0 && d.length > 9) d = d.slice(3);
+    return d;
+  }
+  function validNumber(d) { return /^6\d{8}$/.test(d); }
+  function pretty(n) { return n.length === 9 ? n.slice(0, 1) + ' ' + n.slice(1, 3) + ' ' + n.slice(3, 5) + ' ' + n.slice(5, 7) + ' ' + n.slice(7, 9) : n; }
+  function fmt(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+  function kfmt(v) {
+    if (v >= 1000000) { var m = v / 1000000; return (m % 1 === 0 ? m : m.toFixed(1)) + 'M'; }
+    if (v >= 10000) return (v / 1000) + 'k';
+    return fmt(v);
+  }
+  function fmtS(n) { return (n < 0 ? '−' : '') + fmt(Math.abs(n)); }
+  function sgn(n) { return (n > 0 ? '+' : '−') + fmt(Math.abs(n)); }
+  function findContact(n) { return state.contacts.filter(function (c) { return c.num === n; })[0] || null; }
+  function hamming(a, b) {
+    if (a.length !== b.length) return 99;
+    var d = 0; for (var i = 0; i < a.length; i++) { if (a.charAt(i) !== b.charAt(i)) d++; }
+    return d;
+  }
+  function byRecent(a, b) { return (b.t || 0) - (a.t || 0); }
+
+  /* Formats an input with thousands commas and keeps the caret in place. Returns the digits only. */
+  function moneyInput(el, maxDigits) {
+    var raw = el.value.replace(/\D/g, '').slice(0, maxDigits || 10).replace(/^0+/, '');
+    var shown = raw ? fmt(raw) : '';
+    if (shown !== el.value) {
+      var focused = document.activeElement === el;
+      var before = focused ? el.value.slice(0, el.selectionStart).replace(/\D/g, '').length : 0;
+      el.value = shown;
+      if (focused) {
+        var pos = 0, seen = 0;
+        while (pos < shown.length && seen < before) { if (/\d/.test(shown.charAt(pos))) seen++; pos++; }
+        try { el.setSelectionRange(pos, pos); } catch (e) {}
+      }
+    }
+    return raw;
+  }
+
+  var ONES = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve',
+    'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
+  var TENS = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
+  function below100(n) { if (n < 20) return ONES[n]; return TENS[Math.floor(n / 10)] + (n % 10 ? '-' + ONES[n % 10] : ''); }
+  function below1000(n) {
+    var h = Math.floor(n / 100), r = n % 100, out = [];
+    if (h) out.push(ONES[h] + ' hundred');
+    if (r) out.push((h ? 'and ' : '') + below100(r));
+    return out.join(' ');
+  }
+  function words(num) {
+    var n = Number(num);
+    if (!n) return '';
+    var parts = [];
+    var m = Math.floor(n / 1000000), k = Math.floor((n % 1000000) / 1000), r = n % 1000;
+    if (m) parts.push(below1000(m) + ' million');
+    if (k) parts.push(below1000(k) + ' thousand');
+    if (r) parts.push((r < 100 && parts.length ? 'and ' : '') + below1000(r));
+    var s = parts.join(' ');
+    return s.charAt(0).toUpperCase() + s.slice(1) + (n === 1 ? ' franc' : ' francs');
+  }
+
+  var toastTimer;
+  function toast(msg) {
+    var el = $('toast'); el.textContent = msg; el.hidden = false; clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.hidden = true; }, 2600);
+  }
+  function arm(btn, idle, action) {
+    var timer;
+    btn.addEventListener('click', function () {
+      if (btn.getAttribute('data-arm')) { clearTimeout(timer); btn.removeAttribute('data-arm'); action(); return; }
+      btn.setAttribute('data-arm', '1'); btn.textContent = 'Sure?'; btn.className += ' armed';
+      timer = setTimeout(function () { btn.removeAttribute('data-arm'); btn.textContent = idle; btn.className = btn.className.replace(' armed', ''); }, 2500);
+    });
+  }
+
+  /* ---------- guided flow: scroll to the next field that needs input ---------- */
+  function goField(inputId, wrapId) {
+    var el = $(inputId);
+    try { el.focus({ preventScroll: true }); } catch (e) {}
+    try { el.select(); } catch (e) {}
+    setTimeout(function () { try { $(wrapId).scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) { $(wrapId).scrollIntoView(); } }, 40);
+  }
+  function blurActive() { var a = document.activeElement; if (a && a.blur && a.tagName !== 'BODY') a.blur(); }
+  /* from 'job': go to the customer number if the job needs one. from 'num': go to the amount.
+     Fields are focused and their text selected even when already filled, so typing replaces the old value. */
+  function advance(from) {
+    var t = cur();
+    if (from === 'job' && t.num) { goField('num', 'numField'); return; }
+    if (t.amt) { goField('amt', 'amtField'); return; }
+    blurActive();
+  }
+  function numChanged() {
+    var was = lastNumOk;
+    update();
+    if (lastNumOk && !was) advance('num');
+  }
+
+  /* ---------- cash and float ---------- */
+  /* Withdraw is the only job where float goes up. Every other tracked job puts cash up and float down. */
+  function effectOf(typeId, a) {
+    var t = typeById(typeId);
+    if (!t || !t.track) return { c: 0, f: 0 };
+    return t.dir === 'down' ? { c: -a, f: a } : { c: a, f: -a };
+  }
+  function fxText(c, f) {
+    var p = [];
+    if (c) p.push('Cash ' + sgn(c));
+    if (f) p.push('Float ' + sgn(f));
+    return p.join(' · ');
+  }
+  function addEntry(e) {
+    state.bal.cash += e.dCash; state.bal.float += e.dFloat; state.bal.init = true;
+    state.ledger.unshift(e); state.ledger = state.ledger.slice(0, 3000);
+    persistBal(); persistLedger();
+    return e;
+  }
+  function recordTx(p) {
+    if (p.type === 'ask') {
+      var isCash = p.kind === 'cash';
+      return addEntry({ id: uid(), t: Date.now(), dt: p.t, type: 'ask', kind: p.kind, num: p.num, amt: p.amt,
+        label: (isCash ? 'Cash' : 'Float') + ' received' + (p.name ? ' from ' + p.name : ''), dCash: isCash ? p.amt : 0, dFloat: isCash ? 0 : p.amt });
+      return;
+    }
+    if (p.type === 'swap') {
+      var cashOut = p.cash || p.amt;
+      return addEntry({ id: uid(), t: Date.now(), dt: p.t, type: 'swap', num: p.num, amt: p.amt, cash: cashOut,
+        label: 'Float in \u00b7 ' + fmt(p.amt) + (p.name ? ' from ' + p.name : ''), dCash: -cashOut, dFloat: p.amt });
+    }
+    var fx = effectOf(p.type, p.amt);
+    return addEntry({ id: uid(), t: Date.now(), dt: p.t, type: p.type, jobLabel: typeById(p.type).label, num: p.num, amt: p.amt, dCash: fx.c, dFloat: fx.f });
+  }
+  function removePending(p) { state.pending = state.pending.filter(function (x) { return x.id !== p.id; }); persistPending(); }
+  function undoEntry(e) {
+    state.bal.cash -= e.dCash; state.bal.float -= e.dFloat;
+    state.ledger = state.ledger.filter(function (x) { return x.id !== e.id; });
+    persistBal(); persistLedger(); renderBal(); renderLedger(); update();
+  }
+  function isLow(kind) {
+    var lim = kind === 'cash' ? state.lowCash : state.lowFloat;
+    return lim > 0 && state.bal.init && state.bal[kind] < lim;
+  }
+
+  function renderBal() {
+    var lc = isLow('cash'), lf = isLow('float');
+    $('bsCash').textContent = fmtS(state.bal.cash) + (lc ? ' ▼' : ''); $('bsCash').className = state.bal.cash < 0 || lc ? 'neg' : '';
+    $('bsFloat').textContent = fmtS(state.bal.float) + (lf ? ' ▼' : ''); $('bsFloat').className = state.bal.float < 0 || lf ? 'neg' : '';
+    $('vCash').textContent = fmtS(state.bal.cash) + (lc ? ' ▼' : ''); $('vCash').className = 'bigv' + (state.bal.cash < 0 || lc ? ' neg' : '');
+    $('vFloat').textContent = fmtS(state.bal.float) + (lf ? ' ▼' : ''); $('vFloat').className = 'bigv' + (state.bal.float < 0 || lf ? ' neg' : '');
+    $('setupNote').hidden = state.bal.init;
+    var n = state.pending.length;
+    $('bsPend').hidden = !n; $('bsPend').textContent = n + (n === 1 ? ' transaction' : ' transactions') + ' to confirm. Tap to review.';
+    $('cashDot').hidden = !n; $('pendSec').hidden = !n;
+    $('balStrip').hidden = !state.showBal;
+    var box = $('pendList'); box.innerHTML = '';
+    state.pending.forEach(function (p) {
+      var ask = p.type === 'ask', swap = p.type === 'swap', t = (ask || swap) ? null : typeById(p.type);
+      var r = document.createElement('div'); r.className = 'row';
+      var dot = document.createElement('span'); dot.className = 'rdot'; dot.style.background = ask ? 'var(--accent)' : (swap ? 'var(--c-float)' : 'var(--c-' + p.type + ')');
+      var time = document.createElement('span'); time.className = 'rtime'; time.textContent = hhmm(p.t);
+      var main = document.createElement('div'); main.className = 'rmain';
+      var b = document.createElement('b'); b.textContent = ask ? 'Asked for ' + p.kind + ' \u00b7 ' + fmt(p.amt) : (swap ? 'Float in \u00b7 ' + fmt(p.amt) : t.label + ' \u00b7 ' + fmt(p.amt));
+      var s = document.createElement('span'); s.textContent = ((ask || swap) && p.name ? p.name + ' \u00b7 ' : '') + pretty(p.num) + (swap ? ' \u00b7 give ' + fmt(p.cash || p.amt) + ' cash' : '');
+      main.appendChild(b); main.appendChild(s);
+      var btn = document.createElement('button'); btn.type = 'button'; btn.className = 'rbtn'; btn.textContent = 'Review';
+      btn.addEventListener('click', function () { openPending(p); });
+      r.appendChild(dot); r.appendChild(time); r.appendChild(main); r.appendChild(btn);
+      box.appendChild(r);
+    });
+  }
+
+  function repeatTx(e) {
+    var t = typeById(e.type); if (!t) return;
+    state.type = e.type; lsSet('momo.type', e.type);
+    showTab('desk');
+    $('num').value = e.num || ''; $('amt').value = e.amt ? String(e.amt) : '';
+    renderTypes(); lastNumOk = true; update();
+    try { window.scrollTo({ top: 0 }); } catch (x) {}
+    toast('Loaded. Check it and tap Dial.');
+  }
+
+  function entryMatches(e, q) {
+    q = q.trim().toLowerCase();
+    if (!q) return true;
+    var t = typeById(e.type), c = e.num ? findContact(e.num) : null;
+    var hay = [t ? t.label : '', e.jobLabel || '', e.label || '', e.num || '', c && c.name ? c.name : '', e.name || '', String(e.amt), fmt(e.amt)].join(' ').toLowerCase();
+    if (hay.indexOf(q) > -1) return true;
+    var digits = q.replace(/\D/g, '');
+    if (digits && /^[\d\s,.]+$/.test(q) && ((e.num || '').indexOf(digits) > -1 || String(e.amt).indexOf(digits) > -1)) return true;
+    var m = q.match(/^(\d+(?:\.\d+)?)\s*(k|m)$/);
+    if (m && e.amt === Math.round(parseFloat(m[1]) * (m[2] === 'k' ? 1000 : 1000000))) return true;
+    return false;
+  }
+  function renderLedger() {
+    var today = dkey(new Date());
+    $('cLabel').textContent = dayLabel(state.cashDay);
+    $('cNext').disabled = state.cashDay >= today; $('cNext').style.opacity = state.cashDay >= today ? '0.4' : '1';
+    var day = state.ledger.filter(function (e) { return dkey(new Date(e.t)) === state.cashDay; });
+    var q = $('cSearch').value;
+    var all = q.trim() ? day.filter(function (e) { return entryMatches(e, q); }) : day;
+    var shown = state.showAllToday ? all : all.slice(0, SHOW_LIMIT);
+    $('noToday').hidden = all.length > 0; $('todayList').hidden = all.length === 0;
+    $('noToday').textContent = q.trim() ? 'No transaction matches your search.' : 'Nothing recorded this day.';
+    $('todayMore').hidden = all.length <= SHOW_LIMIT;
+    $('todayMore').textContent = state.showAllToday ? 'Show fewer' : 'Show all (' + all.length + ')';
+    var sums = {}, count = 0, total = 0;
+    all.forEach(function (e) { var t = typeById(e.type); if (t && t.track) { sums[e.type] = (sums[e.type] || 0) + e.amt; total += e.amt; count++; } });
+    var parts = [];
+    allTypes().forEach(function (t) { if (sums[t.id]) parts.push(t.label + ' ' + fmt(sums[t.id])); });
+    if (q.trim()) $('todaySum').textContent = all.length + ' of ' + day.length + (day.length === 1 ? ' entry' : ' entries') + (count ? '. Transactions total ' + fmt(total) : '');
+    else $('todaySum').textContent = count ? count + (count === 1 ? ' transaction. ' : ' transactions. ') + parts.join(' · ') : '';
+    var box = $('todayList'); box.innerHTML = '';
+    shown.forEach(function (e) {
+      var t = typeById(e.type);
+      var r = document.createElement('div'); r.className = 'row';
+      var dot = document.createElement('span'); dot.className = 'rdot';
+      if (t) dot.style.background = 'var(--c-' + e.type + ')'; else if (e.type === 'ask') dot.style.background = 'var(--accent)'; else if (e.type === 'swap') dot.style.background = 'var(--c-float)';
+      var time = document.createElement('span'); time.className = 'rtime'; time.textContent = hhmm(e.t);
+      var main = document.createElement('div'); main.className = 'rmain';
+      var b = document.createElement('b');
+      b.textContent = t ? t.label + ' · ' + fmt(e.amt) : (e.jobLabel ? e.jobLabel + ' · ' + fmt(e.amt) : (e.label || 'Adjustment'));
+      var c = t && e.num ? findContact(e.num) : null;
+      var s = document.createElement('span');
+      var bits = [];
+      if (t || e.jobLabel) { if (c && c.name) bits.push(c.name); if (e.num) bits.push(pretty(e.num)); }
+      else if ((e.type === 'ask' || e.type === 'swap') && e.num) bits.push(pretty(e.num));
+      bits.push(fxText(e.dCash, e.dFloat));
+      s.textContent = bits.filter(Boolean).join(' · ');
+      main.appendChild(b); main.appendChild(s);
+      var acts = document.createElement('div'); acts.className = 'racts';
+      if (t) {
+        var rp = document.createElement('button'); rp.type = 'button'; rp.className = 'rbtn'; rp.textContent = 'Repeat';
+        rp.addEventListener('click', function () { repeatTx(e); });
+        acts.appendChild(rp);
+      }
+      var u = document.createElement('button'); u.type = 'button'; u.className = 'rbtn'; u.textContent = 'Undo';
+      arm(u, 'Undo', function () { undoEntry(e); });
+      acts.appendChild(u);
+      r.appendChild(dot); r.appendChild(time); r.appendChild(main); r.appendChild(acts);
+      box.appendChild(r);
+    });
+  }
+
+  /* ---------- pending confirmation sheet ---------- */
+  var sheetItem = null, lastDialAt = 0;
+  function dueItem() { var now = Date.now(); return state.pending.filter(function (p) { return !p.snooze || p.snooze <= now; })[0] || null; }
+  /* ---------- duplicate check: same job, number and amount within 2 minutes ---------- */
+  var DUP_MS = 120000, dupGroup = [], autoDups = [];
+  function tmOf(x) { return x.dt || x.t; }
+  /* Amounts are close when equal, up to 2 digits off, or one extra/missing trailing zero (5000 and 50000). */
+  function amtClose(x, y) {
+    if (x === y) return true;
+    var a = String(x), b = String(y);
+    if (a.length === b.length) return hamming(a, b) <= 2;
+    var sh = a.length < b.length ? a : b, lo = a.length < b.length ? b : a;
+    return lo.length === sh.length + 1 && lo.slice(0, -1) === sh;
+  }
+  function txClass(x) { return x.type === 'ask' ? 'ask' : (x.type === 'swap' ? 'swap' : 'tx'); }
+  function isSimilar(a, b) {
+    if (a === b) return true;
+    if (txClass(a) !== txClass(b)) return false;
+    if (txClass(a) === 'ask' && a.kind !== b.kind) return false;
+    var na = a.num || '', nb = b.num || '';
+    if (!state.dupFuzzy) return a.type === b.type && na === nb && a.amt === b.amt;
+    var numOk = na === nb || (na && nb && hamming(na, nb) <= 2);
+    return !!numOk && amtClose(a.amt, b.amt);
+  }
+  /* Builds the whole cluster of look-alikes around one item. It follows chains (A looks like B, B looks like C),
+     so three near-identical transactions all show up together instead of only the ones that match the newest. */
+  function similarTo(a) {
+    if (!state.dup || !a || !a.amt) return [];
+    var pool = [];
+    state.pending.forEach(function (p) { pool.push({ pending: true, item: p }); });
+    state.ledger.forEach(function (e) {
+      if (e.type === 'set' || e.type === 'adjust') return;
+      pool.push({ pending: false, item: e });
+    });
+    var inSet = {}, frontier = [a];
+    if (a.id) inSet[a.id] = true;
+    while (frontier.length) {
+      var cur = frontier.pop();
+      pool.forEach(function (g) {
+        var x = g.item;
+        if (inSet[x.id]) return;
+        if (isSimilar(cur, x) && Math.abs(tmOf(cur) - tmOf(x)) <= DUP_MS) { inSet[x.id] = true; frontier.push(x); }
+      });
+    }
+    var out = pool.filter(function (g) { return inSet[g.item.id]; });
+    out.sort(function (x, y) { return tmOf(x.item) - tmOf(y.item); });
+    return out;
+  }
+  function dupEffect(g) {
+    var x = g.item;
+    if (!g.pending) return { c: x.dCash, f: x.dFloat };
+    if (x.type === 'ask') return x.kind === 'cash' ? { c: x.amt, f: 0 } : { c: 0, f: x.amt };
+    if (x.type === 'swap') return { c: -(x.cash || x.amt), f: x.amt };
+    return effectOf(x.type, x.amt);
+  }
+  function openDup(group) {
+    dupGroup = group.map(function (g) { return { pending: g.pending, item: g.item, ok: !g.pending }; });
+    $('pend').hidden = true; sheetItem = null;
+    renderDup(); $('dup').hidden = false;
+  }
+  function renderDup() {
+    var box = $('dupList'); box.innerHTML = '';
+    var dc = 0, df = 0;
+    dupGroup.forEach(function (g) {
+      var x = g.item, t = typeById(x.type), fx = dupEffect(g);
+      var r = document.createElement('div'); r.className = 'row' + (g.ok ? '' : ' done');
+      var tick = document.createElement('button'); tick.type = 'button'; tick.className = 'tick'; tick.textContent = '✓';
+      tick.setAttribute('aria-pressed', g.ok); tick.setAttribute('aria-label', g.ok ? 'Went through. Tap to untick' : 'Did not go through. Tap to tick');
+      tick.addEventListener('click', function () { g.ok = !g.ok; renderDup(); });
+      var main = document.createElement('div'); main.className = 'rmain';
+      var b = document.createElement('b');
+      b.textContent = x.type === 'swap' ? 'Float in · ' + fmt(x.amt) : x.type === 'ask' ? (g.pending ? 'Asked for ' + x.kind : (x.label || 'Received')) + ' · ' + fmt(x.amt) : (t ? t.label : (x.jobLabel || 'Transaction')) + ' · ' + fmt(x.amt);
+      var s = document.createElement('span');
+      s.textContent = [hhmm(tmOf(x)), x.num ? pretty(x.num) : '', g.pending ? 'Not recorded yet' : 'Already recorded', fxText(fx.c, fx.f)].filter(Boolean).join(' · ');
+      main.appendChild(b); main.appendChild(s);
+      r.appendChild(tick); r.appendChild(main); box.appendChild(r);
+      if (g.pending && g.ok) { dc += fx.c; df += fx.f; }
+      if (!g.pending && !g.ok) { dc -= fx.c; df -= fx.f; }
+    });
+    $('dupFx').textContent = (dc || df) ? 'This will change your balance: ' + fxText(dc, df) : 'No change to your balance.';
+  }
+  function applyDup(allOk) {
+    var g = dupGroup; dupGroup = []; $('dup').hidden = true;
+    g.forEach(function (r) {
+      var ok = allOk || r.ok;
+      if (r.pending) { removePending(r.item); if (ok) recordTx(r.item); }
+      else if (!ok) undoEntry(r.item);
+    });
+    toast('Updated'); afterDecision();
+  }
+  function closeDup(snooze) {
+    if ($('dup').hidden) return;
+    if (snooze) dupGroup.forEach(function (r) { if (r.pending) r.item.snooze = Date.now() + 2 * 60000; });
+    setTimeout(schedulePrompt, 121000);
+    persistPending(); dupGroup = []; $('dup').hidden = true;
+  }
+  $('dApply').addEventListener('click', function () { applyDup(false); });
+  $('dAll').addEventListener('click', function () { applyDup(true); });
+  $('dLater').addEventListener('click', function () { closeDup(true); });
+  $('dup').addEventListener('click', function (e) { if (e.target === $('dup')) closeDup(true); });
+
+  function openPending(p) {
+    if (state.dup) { var grp = similarTo(p); if (grp.length > 1) { openDup(grp); return; } }
+    sheetItem = p;
+    var ask = p.type === 'ask', swap = p.type === 'swap', wait = ask || swap;
+    var c = p.num ? findContact(p.num) : null;
+    var fx = ask ? (p.kind === 'cash' ? { c: p.amt, f: 0 } : { c: 0, f: p.amt }) : (swap ? { c: -(p.cash || p.amt), f: p.amt } : effectOf(p.type, p.amt));
+    $('pTitle').textContent = swap ? 'Did their float arrive?' : (ask ? 'Did they send it?' : 'Did it go through?');
+    $('pAmt').textContent = fmt(p.amt) + (swap ? ' FCFA float' : ' FCFA');
+    $('pWords').textContent = words(p.amt);
+    $('pDetail').textContent = swap ? 'Float from ' + [c && c.name ? c.name : (p.name || ''), pretty(p.num)].filter(Boolean).join(' · ') + '. Give them ' + fmt(p.cash || p.amt) + ' cash.'
+      : ask ? 'Asked ' + (p.name || pretty(p.num)) + ' for ' + p.kind
+      : [typeById(p.type).label, c && c.name ? c.name : '', p.num ? pretty(p.num) : ''].filter(Boolean).join(' · ');
+    $('pFx').textContent = 'Will record: ' + fxText(fx.c, fx.f);
+    $('pYes').textContent = swap ? 'Yes, float arrived. Cash given' : (ask ? 'Yes, I received it' : 'Yes, record it');
+    $('pLater').textContent = wait ? 'Not yet' : 'Decide later';
+    $('pLater').className = wait ? 'pill alt' : 'btn';
+    $('pLater').style.order = wait ? '1' : '3'; $('pYes').style.order = wait ? '2' : '1'; $('pNo').style.order = wait ? '3' : '2';
+    $('pYes').style.background = wait ? 'var(--accent)' : 'var(--c-' + p.type + ')';
+    $('pend').hidden = false;
+  }
+  function closePending(snooze) {
+    if (snooze && sheetItem) { sheetItem.snooze = Date.now() + ((sheetItem.type === 'ask' || sheetItem.type === 'swap') ? 10 : 2) * 60000; persistPending(); setTimeout(schedulePrompt, ((sheetItem.type === 'ask' || sheetItem.type === 'swap') ? 10 : 2) * 60000 + 1000); }
+    $('pend').hidden = true; sheetItem = null;
+  }
+  function afterDecision() {
+    renderBal(); renderLedger(); update();
+    var n = dueItem(); if (n) openPending(n); else { closePending(); if (autoDups.length) setTimeout(runPrompts, 400); }
+  }
+  $('pYes').addEventListener('click', function () {
+    if (!sheetItem) return;
+    var p = sheetItem; removePending(p); recordTx(p); toast('Recorded'); afterDecision();
+  });
+  $('pNo').addEventListener('click', function () { if (!sheetItem) return; removePending(sheetItem); toast('Discarded'); afterDecision(); });
+  $('pLater').addEventListener('click', function () { closePending(true); });
+  $('pend').addEventListener('click', function (e) { if (e.target === $('pend')) closePending(true); });
+
+  var needTop = false;
+  function onReturn() {
+    if (document.visibilityState !== 'visible') return;
+    if (Date.now() - lastDialAt < 1500) return;
+    if (needTop) {
+      needTop = false; blurActive();
+      try { window.scrollTo(0, 0); } catch (e) {}
+      setTimeout(function () { try { window.scrollTo(0, 0); } catch (e) {} }, 80);
+    }
+    schedulePrompt();
+  }
+  /* Questions wait a few seconds, and until the agent stops tapping, so they never interrupt a busy moment. */
+  var promptTimer = null, lastTouch = Date.now();
+  ['pointerdown', 'keydown', 'input', 'touchstart'].forEach(function (ev) { document.addEventListener(ev, function () { lastTouch = Date.now(); }, true); });
+  function runPrompts() {
+    if (!$('incoming').hidden || !$('pend').hidden || !$('confirm').hidden || !$('dup').hidden || !$('jobSheet').hidden) return;
+    while (autoDups.length) {
+      var sid = autoDups.shift();
+      var ae = state.ledger.filter(function (x) { return x.id === sid; })[0];
+      var ag = ae ? similarTo(ae) : [];
+      if (ag.length > 1) {
+        /* other queued seeds that belong to this same cluster are covered by this one sheet */
+        autoDups = autoDups.filter(function (id) { return !ag.some(function (g) { return g.item.id === id; }); });
+        openDup(ag); return;
+      }
+    }
+    var n = dueItem(); if (n) openPending(n);
+  }
+  function schedulePrompt() {
+    clearTimeout(promptTimer);
+    promptTimer = setTimeout(function tick() {
+      if (document.visibilityState !== 'visible') return;
+      if (state.askDelay > 0 && Date.now() - lastTouch < 3000) { promptTimer = setTimeout(tick, 2000); return; }
+      runPrompts();
+    }, state.askDelay * 1000);
+  }
+  document.addEventListener('visibilitychange', onReturn);
+  window.addEventListener('focus', onReturn);
+  window.addEventListener('pageshow', onReturn);
+
+  /* ---------- customers ---------- */
+  function suggest(d) {
+    if (d.length < 2) return { list: [], similar: false };
+    if (validNumber(d)) {
+      if (findContact(d)) return { list: [], similar: false };
+      var near = state.contacts.filter(function (c) { return hamming(d, c.num) <= 1; }).sort(byRecent).slice(0, 3);
+      return { list: near, similar: near.length > 0 };
+    }
+    var starts = [], inc = [];
+    state.contacts.slice().sort(byRecent).forEach(function (c) {
+      var i = c.num.indexOf(d);
+      if (i === 0) starts.push(c); else if (i > 0) inc.push(c);
+    });
+    return { list: starts.concat(inc).slice(0, 8), similar: false };
+  }
+  function renderContacts() {
+    var list = state.contacts.slice().sort(byRecent);
+    var shown = state.showAll ? list : list.slice(0, 20);
+    var box = $('contacts'); box.innerHTML = '';
+    $('noContacts').hidden = list.length > 0;
+    $('toggleAll').hidden = list.length <= 20;
+    $('toggleAll').textContent = state.showAll ? 'Show fewer' : 'Show all (' + list.length + ')';
+    shown.forEach(function (c) {
+      var w = document.createElement('div'); w.className = 'contact';
+      var p = document.createElement('div'); p.className = 'pick'; p.style.cursor = 'default';
+      var nm = document.createElement('b'); nm.textContent = c.name || pretty(c.num);
+      p.appendChild(nm);
+      if (c.name) { var nu = document.createElement('span'); nu.textContent = c.num; p.appendChild(nu); }
+      var d = document.createElement('button'); d.type = 'button'; d.className = 'del';
+      d.setAttribute('aria-label', 'Remove ' + (c.name || c.num)); d.textContent = '×';
+      d.addEventListener('click', function () {
+        var i = state.contacts.indexOf(c); if (i > -1) state.contacts.splice(i, 1);
+        persistContacts(); renderContacts(); update();
+      });
+      w.appendChild(p); w.appendChild(d); box.appendChild(w);
+    });
+  }
+  function renderStrip(n, sg) {
+    var box = $('strip'); box.innerHTML = '';
+    $('sugCap').hidden = !sg.similar;
+    var items = [], cls = 'sug';
+    if (n.length >= 2) { items = sg.list; cls += sg.similar ? ' near' : ' match'; }
+    else { items = state.contacts.slice().sort(byRecent).slice(0, 12); }
+    items.forEach(function (c) {
+      var b = document.createElement('button');
+      b.type = 'button'; b.className = cls;
+      if (c.name) { var nm = document.createElement('b'); nm.textContent = c.name; b.appendChild(nm); }
+      var nu = document.createElement('span'); nu.textContent = c.num; b.appendChild(nu);
+      b.addEventListener('click', function () { $('num').value = c.num; update(); advance('num'); });
+      box.appendChild(b);
+    });
+    box.style.display = items.length ? 'flex' : 'none';
+  }
+
+  /* ---------- desk ---------- */
+  function typeButton(t, cls) {
+    var b = document.createElement('button');
+    b.type = 'button'; b.className = cls; b.setAttribute('aria-pressed', t.id === state.type);
+    b.style.setProperty('--j', 'var(--c-' + t.id + ')');
+    b.appendChild(document.createTextNode(t.label));
+    if (cls === 'type') { var sm = document.createElement('small'); sm.textContent = (t.id === 'emergency' ? '' : '*') + t.tag; b.appendChild(sm); }
+    b.addEventListener('click', function () {
+      state.type = t.id; lsSet('momo.type', t.id); renderTypes(); update(); advance('job');
+    });
+    return b;
+  }
+  function renderTypes() {
+    var box = $('types'); box.innerHTML = '';
+    TYPES.forEach(function (t) { box.appendChild(typeButton(t, 'type')); });
+    var mj = $('myjobs'); mj.innerHTML = '';
+    var add = document.createElement('button'); add.type = 'button'; add.className = 'mytype add'; add.textContent = '+ My job';
+    add.addEventListener('click', function () { openJobSheet(null); });
+    mj.appendChild(add);
+    CUSTOM.forEach(function (t) { mj.appendChild(typeButton(t, 'mytype')); });
+  }
+  /* Builds the set / add / subtract button grid for an amount input. Each pad keeps its own add or subtract mode. */
+  function makePad(rootId, inputId, onChange, keepFocus) {
+    var root = $(rootId); root.innerHTML = '';
+    var mode = 'add';
+    function el(tag, cls, text) { var x = document.createElement(tag); if (cls) x.className = cls; if (text) x.textContent = text; return x; }
+    var grid = el('div', 'amtgrid');
+    var c1 = el('div', 'col'), g1 = el('div', 'grid2');
+    c1.appendChild(el('p', 'mini', 'Set amount')); c1.appendChild(g1);
+    var c2 = el('div', 'col'), g2 = el('div', 'grid2');
+    c2.appendChild(el('p', 'mini', 'Add or subtract')); c2.appendChild(g2);
+    var seg = el('div', 'seg full'), bAdd = el('button', '', 'Add'), bSub = el('button', '', 'Subtract');
+    bAdd.type = 'button'; bSub.type = 'button';
+    seg.appendChild(bAdd); seg.appendChild(bSub); c2.appendChild(seg);
+    grid.appendChild(c1); grid.appendChild(c2); root.appendChild(grid);
+    function cur() { return Number($(inputId).value.replace(/\D/g, '')) || 0; }
+    function done() {
+      var inp = $(inputId);
+      if (keepFocus) {
+        onChange();
+        try { inp.focus({ preventScroll: true }); var L = inp.value.length; inp.setSelectionRange(L, L); } catch (e) {}
+      } else { try { inp.blur(); } catch (e) {} onChange(); }
+    }
+    if (keepFocus) {
+      /* Stop pad buttons from taking focus, so the amount field stays active and the keyboard stays open. */
+      root.addEventListener('mousedown', function (e) { if (e.target.closest && e.target.closest('button')) e.preventDefault(); });
+      root.addEventListener('pointerdown', function (e) { if (e.pointerType !== 'touch' && e.target.closest && e.target.closest('button')) e.preventDefault(); });
+    }
+    STATICS.forEach(function (v) {
+      var b = el('button', 'sv', kfmt(v)); b.type = 'button'; b.setAttribute('aria-label', 'Set amount to ' + v);
+      b.addEventListener('click', function () { $(inputId).value = String(v); done(); });
+      g1.appendChild(b);
+    });
+    var stepBtns = STEPS.map(function (v) {
+      var b = el('button', 'step'); b.type = 'button';
+      b.addEventListener('click', function () {
+        var next = mode === 'sub' ? Math.max(0, cur() - v) : Math.min(999999999, cur() + v);
+        $(inputId).value = next ? String(next) : ''; done();
+      });
+      g2.appendChild(b); return b;
+    });
+    function render() {
+      var sub = mode === 'sub';
+      c2.className = 'col' + (sub ? ' sub' : '');
+      stepBtns.forEach(function (b, i) {
+        b.textContent = (sub ? '−' : '+') + kfmt(STEPS[i]);
+        b.setAttribute('aria-label', (sub ? 'Subtract ' : 'Add ') + STEPS[i]);
+      });
+      bAdd.setAttribute('aria-pressed', !sub); bSub.setAttribute('aria-pressed', sub);
+      seg.className = 'seg full' + (sub ? ' subseg' : '');
+    }
+    bAdd.addEventListener('click', function () { mode = 'add'; render(); });
+    bSub.addEventListener('click', function () { mode = 'sub'; render(); });
+    render();
+  }
+
+  function update() {
+    var t = cur();
+    document.body.style.setProperty('--job', 'var(--c-' + t.id + ')');
+    $('bnName').textContent = t.label; $('bnFx').textContent = t.short;
+    $('numField').hidden = !t.num; $('amtField').hidden = !t.amt;
+    $('amtLabel').textContent = t.optAmt ? 'Amount paid (for your records, not in the code)' : 'Amount (FCFA)';
+
+    var n = normNumber($('num').value);
+    var a = moneyInput($('amt'), 9);
+    var nOk = validNumber(n), aOk = a.length > 0 && Number(a) > 0;
+    lastNumOk = nOk;
+    var saved = nOk ? findContact(n) : null;
+    if (state.naming && !nOk) { state.naming = false; $('nameBox').hidden = true; }
+
+    var nh = $('numHint');
+    if (!n) { nh.textContent = ''; nh.className = 'hint'; }
+    else if (nOk) { nh.textContent = (saved && saved.name ? saved.name + ' · ' : '') + pretty(n); nh.className = 'hint ok'; }
+    else { nh.textContent = 'Needs 9 digits starting with 6 (' + n.length + ' so far)'; nh.className = 'hint bad'; }
+    if (t.num) renderStrip(n, suggest(n)); else $('strip').style.display = 'none';
+
+    $('amtHint').textContent = aOk ? fmt(a) + ' FCFA' : ''; $('amtHint').className = 'hint ok';
+    $('amtWords').textContent = aOk ? words(a) : '';
+    var warn = '';
+    if (aOk && state.bal.init && t.track) {
+      var A = Number(a);
+      if (t.dir === 'down' && A > state.bal.cash) warn = 'More than your cash in hand (' + fmtS(state.bal.cash) + ').';
+      else if (t.dir !== 'down' && A > state.bal.float) warn = 'More than your float (' + fmtS(state.bal.float) + ').';
+    }
+    $('amtWarn').textContent = warn;
+
+    var ready = (!t.num || nOk) && (!t.amt || t.optAmt || aOk);
+    var code = ready ? t.build(n, a) : t.build(t.num ? (nOk ? n : 'number') : '', t.amt && !t.optAmt ? (aOk ? a : 'amount') : '');
+    currentCode = ready ? code : ''; currentNum = n; currentAmt = a;
+    $('bnCode').textContent = code; $('bnCode').style.opacity = ready ? '1' : '0.7';
+
+    var dial = $('dial');
+    $('fab').classList.toggle('off', !ready);
+    dial.setAttribute('aria-disabled', ready ? 'false' : 'true');
+    dial.setAttribute('href', ready ? 'tel:' + encodeURIComponent(code) : '#');
+    $('copy').disabled = !ready;
+    $('saveBtn').textContent = state.naming ? 'Done' : (saved ? 'Rename' : 'Save');
+    $('saveBtn').disabled = !nOk; $('saveBtn').style.opacity = nOk ? '1' : '0.5';
+    renderBal();
+    placeFab();
+  }
+
+  function copyText(v) {
+    if (!v) return false;
+    var ok = false;
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = v; ta.setAttribute('readonly', '');
+      ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;';
+      document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0, v.length);
+      ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+    } catch (e) {}
+    if (!ok) { try { navigator.clipboard.writeText(v).then(function () {}, function () {}); ok = true; } catch (e2) {} }
+    return ok;
+  }
+  function autoSave() {
+    var t = cur();
+    if (!t.num || !validNumber(currentNum)) return;
+    var c = findContact(currentNum);
+    if (c) { c.t = Date.now(); c.cnt = (c.cnt || 0) + 1; }
+    else { state.contacts.unshift({ name: '', num: currentNum, t: Date.now(), cnt: 1 }); }
+    state.contacts = state.contacts.sort(byRecent).slice(0, 300);
+    persistContacts(); renderContacts();
+  }
+  function proceedDial() {
+    lastDialAt = Date.now(); needTop = true;
+    copyText(state.copy);
+    autoSave();
+    var t = cur();
+    if (t.track && currentAmt) {
+      var p = { id: uid(), t: Date.now(), type: t.id, num: currentNum, amt: Number(currentAmt) };
+      if (state.auto) {
+        var ne = recordTx(p); renderBal(); renderLedger(); toast('Recorded');
+        if (ne && similarTo(ne).length > 1) autoDups.push(ne.id);
+      }
+      else { state.pending.push(p); state.pending = state.pending.slice(-20); persistPending(); renderBal(); toast('Opening dialer. Confirm it when you return.'); }
+    } else { toast('Opening dialer. If nothing happens, tap Copy.'); }
+  }
+  function openConfirm() {
+    var t = cur();
+    $('cAmt').textContent = fmt(currentAmt) + ' FCFA';
+    $('cWords').textContent = words(currentAmt);
+    var c = t.num ? findContact(currentNum) : null;
+    $('cDetail').textContent = t.label + (t.num ? ' · ' + (c && c.name ? c.name + ' · ' : '') + pretty(currentNum) : '');
+    $('cGo').setAttribute('href', $('dial').getAttribute('href'));
+    $('cGo').style.background = 'var(--c-' + t.id + ')';
+    $('confirm').hidden = false; $('cGo').focus();
+  }
+  function closeConfirm() { $('confirm').hidden = true; if (typeof reqCur !== 'undefined' && !reqCur && reqQueue.length) setTimeout(function () { if (!reqCur && reqQueue.length) showReq(reqQueue.shift()); }, 300); }
+
+  $('num').addEventListener('input', numChanged);
+  $('amt').addEventListener('input', update);
+  $('clrNum').addEventListener('click', function () {
+    $('num').value = ''; $('nameBox').value = ''; $('nameBox').hidden = true; state.naming = false; update(); goField('num', 'numField');
+  });
+  $('clrAmt').addEventListener('click', function () { $('amt').value = ''; update(); goField('amt', 'amtField'); });
+  $('toggleAll').addEventListener('click', function () { state.showAll = !state.showAll; renderContacts(); });
+  function bannerTap() { try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch (e) { window.scrollTo(0, 0); } }
+  $('banner').addEventListener('click', bannerTap);
+  $('banner').addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); bannerTap(); } });
+
+  function commitName() {
+    var n = normNumber($('num').value);
+    if (!validNumber(n)) return;
+    var name = $('nameBox').value.trim();
+    var c = findContact(n);
+    if (c) c.name = name; else state.contacts.unshift({ name: name, num: n, t: Date.now(), cnt: 0 });
+    state.contacts = state.contacts.slice(0, 300);
+    persistContacts(); state.naming = false; $('nameBox').hidden = true;
+    renderContacts(); update(); toast('Saved');
+    if (cur().amt && !$('amt').value) goField('amt', 'amtField');
+  }
+  $('saveBtn').addEventListener('click', function () {
+    var n = normNumber($('num').value);
+    if (!validNumber(n)) return;
+    if (state.naming) { commitName(); return; }
+    var c = findContact(n);
+    state.naming = true; $('nameBox').value = c ? c.name || '' : '';
+    $('nameBox').hidden = false; $('nameBox').focus(); update();
+  });
+  $('nameBox').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); commitName(); } });
+
+  var suppressClick = false;
+  $('dial').addEventListener('click', function (e) {
+    if (suppressClick || $('dial').getAttribute('aria-disabled') === 'true') { e.preventDefault(); return; }
+    var t = cur();
+    if (t.amt && currentAmt && Number(currentAmt) >= BIG) { e.preventDefault(); openConfirm(); return; }
+    proceedDial();
+  });
+  $('dial').addEventListener('dragstart', function (e) { e.preventDefault(); });
+  $('cGo').addEventListener('click', function () { closeConfirm(); proceedDial(); });
+  $('cCancel').addEventListener('click', closeConfirm);
+  $('confirm').addEventListener('click', function (e) { if (e.target === $('confirm')) closeConfirm(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { closeConfirm(); closePending(); closeDup(true); closeJobSheet(); } });
+  $('copy').addEventListener('click', function () {
+    if (suppressClick || !currentCode) return;
+    if (copyText(currentCode)) { toast('Copied ' + currentCode); return; }
+    toast('Could not copy. Long press the code at the top and copy it.');
+  });
+  $('balMain').addEventListener('click', function () { showTab('cash'); });
+
+  /* ---------- eye: show or hide cash and float on the Desk (turn it back on in the Cash tab) ---------- */
+  function eyeSvg(on) {
+    return on
+      ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M1.5 12S5.5 5 12 5s10.5 7 10.5 7-4 7-10.5 7S1.5 12 1.5 12z"/><circle cx="12" cy="12" r="3"/></svg>'
+      : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 5.1A10 10 0 0 1 12 5c6.5 0 10.5 7 10.5 7a17 17 0 0 1-3.2 3.9M6.6 6.7A17 17 0 0 0 1.5 12S5.5 19 12 19a10 10 0 0 0 4.4-1"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
+  }
+  function renderEye() {
+    ['eyeDesk', 'eyeCash'].forEach(function (id) { var b = $(id); b.innerHTML = eyeSvg(state.showBal); b.setAttribute('aria-pressed', state.showBal); });
+    $('balStrip').hidden = !state.showBal;
+    $('eyeCashLabel').textContent = state.showBal ? 'Cash and float are shown on the Desk' : 'Cash and float are hidden on the Desk';
+  }
+  function toggleEye() {
+    state.showBal = !state.showBal; lsSet('momo.showbal', state.showBal ? '1' : '0'); renderEye();
+    toast(state.showBal ? 'Cash and float shown on the Desk' : 'Hidden. Turn it back on in the Cash tab.');
+  }
+  $('eyeDesk').addEventListener('click', toggleEye);
+  $('eyeCash').addEventListener('click', toggleEye);
+
+  /* ---------- floating, draggable Dial + Copy; keeps clear of the keyboard ---------- */
+  var fab = $('fab'), dragState = null;
+  function vp() {
+    var v = window.visualViewport;
+    return v ? { w: v.width, h: v.height, x: v.offsetLeft, y: v.offsetTop } : { w: window.innerWidth, h: window.innerHeight, x: 0, y: 0 };
+  }
+  function placeFab() {
+    if (fab.hidden || dragState) return;
+    var v = vp(), w = fab.offsetWidth, h = fab.offsetHeight, m = 10, x, y;
+    if (state.fab) {
+      x = v.x + m + state.fab.x * Math.max(0, v.w - w - 2 * m);
+      y = v.y + m + state.fab.y * Math.max(0, v.h - h - 2 * m);
+    } else { x = v.x + v.w - w - 16; y = v.y + v.h - h - 16; }
+    fab.style.left = Math.round(x) + 'px'; fab.style.top = Math.round(y) + 'px';
+  }
+  if (window.visualViewport) { window.visualViewport.addEventListener('resize', placeFab); window.visualViewport.addEventListener('scroll', placeFab); }
+  window.addEventListener('resize', placeFab);
+
+  fab.addEventListener('pointerdown', function (e) {
+    if (e.button > 0) return;
+    var r = fab.getBoundingClientRect();
+    dragState = { sx: e.clientX, sy: e.clientY, dx: e.clientX - r.left, dy: e.clientY - r.top, moved: false, fx: 0, fy: 0 };
+    document.addEventListener('pointermove', onMove); document.addEventListener('pointerup', endDrag); document.addEventListener('pointercancel', endDrag);
+  });
+  function onMove(e) {
+    if (!dragState) return;
+    if (!dragState.moved) {
+      if (Math.abs(e.clientX - dragState.sx) + Math.abs(e.clientY - dragState.sy) < 10) return;
+      dragState.moved = true;
+    }
+    var v = vp(), w = fab.offsetWidth, h = fab.offsetHeight, m = 10;
+    var x = Math.min(Math.max(e.clientX - dragState.dx, v.x + m), v.x + v.w - w - m);
+    var y = Math.min(Math.max(e.clientY - dragState.dy, v.y + m), v.y + v.h - h - m);
+    fab.style.left = x + 'px'; fab.style.top = y + 'px';
+    dragState.fx = (x - v.x - m) / Math.max(1, v.w - w - 2 * m);
+    dragState.fy = (y - v.y - m) / Math.max(1, v.h - h - 2 * m);
+  }
+  function endDrag() {
+    document.removeEventListener('pointermove', onMove); document.removeEventListener('pointerup', endDrag); document.removeEventListener('pointercancel', endDrag);
+    if (!dragState) return;
+    if (dragState.moved) {
+      state.fab = { x: clamp01(dragState.fx), y: clamp01(dragState.fy) };
+      lsSet('momo.fab', JSON.stringify(state.fab));
+      suppressClick = true; setTimeout(function () { suppressClick = false; }, 400);
+    }
+    dragState = null;
+  }
+  $('resetFab').addEventListener('click', function () { state.fab = null; lsSet('momo.fab', ''); placeFab(); toast('Dial button reset'); });
+
+  /* ---------- tabs ---------- */
+  function showTab(id) {
+    state.tab = id;
+    TABS.forEach(function (t) { $('tab-' + t).hidden = t !== id; $('tabbtn-' + t).setAttribute('aria-selected', t === id); });
+    var desk = id === 'desk';
+    fab.hidden = !desk;
+    if (desk) placeFab();
+    if (id === 'cash') renderBal();
+    if (id === 'history') renderLedger();
+    if (id === 'notes') renderNotes();
+    if (id === 'calc') renderCalc();
+    try { window.scrollTo(0, 0); } catch (e) {}
+  }
+  TABS.forEach(function (t) { $('tabbtn-' + t).addEventListener('click', function () { showTab(t); }); });
+
+  /* ---------- cash tab actions ---------- */
+  Array.prototype.forEach.call(document.querySelectorAll('[data-edit]'), function (b) {
+    b.addEventListener('click', function () {
+      state.editing = b.getAttribute('data-edit');
+      $('editLabel').textContent = state.editing === 'cash' ? 'Set cash in hand to' : 'Set float (SIM) to';
+      var v = state.bal[state.editing];
+      $('editVal').value = v > 0 ? fmt(v) : '';
+      $('editor').hidden = false; $('editVal').focus();
+    });
+  });
+  $('editVal').addEventListener('input', function () { moneyInput($('editVal'), 12); });
+  $('editCancel').addEventListener('click', function () { $('editor').hidden = true; state.editing = null; });
+  $('editSave').addEventListener('click', function () {
+    var k = state.editing; if (!k) return;
+    var v = Number(moneyInput($('editVal'), 12)) || 0;
+    var d = v - state.bal[k];
+    $('editor').hidden = true; state.editing = null;
+    if (d === 0) { state.bal.init = true; persistBal(); renderBal(); return; }
+    addEntry({ id: uid(), t: Date.now(), type: 'set', label: (k === 'cash' ? 'Cash' : 'Float') + ' set to ' + fmt(v), amt: Math.abs(d), dCash: k === 'cash' ? d : 0, dFloat: k === 'float' ? d : 0 });
+    renderBal(); renderLedger(); update(); toast('Saved');
+  });
+  $('adjAmt').addEventListener('input', function () { moneyInput($('adjAmt'), 12); });
+  function renderAdj() {
+    $('adjCash').setAttribute('aria-pressed', state.adjKind === 'cash'); $('adjFloat').setAttribute('aria-pressed', state.adjKind === 'float');
+    $('adjAdd').setAttribute('aria-pressed', state.adjSign === 'add'); $('adjRemove').setAttribute('aria-pressed', state.adjSign === 'remove');
+    $('adjSignSeg').className = 'seg' + (state.adjSign === 'remove' ? ' subseg' : '');
+  }
+  $('adjCash').addEventListener('click', function () { state.adjKind = 'cash'; renderAdj(); });
+  $('adjFloat').addEventListener('click', function () { state.adjKind = 'float'; renderAdj(); });
+  $('adjAdd').addEventListener('click', function () { state.adjSign = 'add'; renderAdj(); });
+  $('adjRemove').addEventListener('click', function () { state.adjSign = 'remove'; renderAdj(); });
+  $('adjApply').addEventListener('click', function () {
+    var amt = Number(moneyInput($('adjAmt'), 12)) || 0;
+    if (!amt) { toast('Enter an amount first'); return; }
+    var s = state.adjSign === 'add' ? 1 : -1, k = state.adjKind, note = $('adjNote').value.trim();
+    addEntry({ id: uid(), t: Date.now(), type: 'adjust', amt: amt, label: (s > 0 ? 'Added to ' : 'Removed from ') + (k === 'cash' ? 'cash' : 'float') + (note ? ': ' + note : ''), dCash: k === 'cash' ? s * amt : 0, dFloat: k === 'float' ? s * amt : 0 });
+    $('adjAmt').value = ''; $('adjNote').value = '';
+    renderBal(); renderLedger(); update(); toast('Done');
+  });
+  $('todayMore').addEventListener('click', function () { state.showAllToday = !state.showAllToday; renderLedger(); });
+  $('cPrev').addEventListener('click', function () { state.cashDay = shiftDay(state.cashDay, -1); renderLedger(); });
+  $('cNext').addEventListener('click', function () { var today = dkey(new Date()); if (state.cashDay < today) { state.cashDay = shiftDay(state.cashDay, 1); renderLedger(); } });
+
+  /* ---------- notes ---------- */
+  function shiftDay(key, delta) {
+    var p = key.split('-'); return dkey(new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]) + delta));
+  }
+  function dayLabel(key) {
+    var today = dkey(new Date());
+    if (key === today) return 'Today';
+    if (key === shiftDay(today, -1)) return 'Yesterday';
+    var p = key.split('-');
+    try { return new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2])).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }); } catch (e) { return key; }
+  }
+  function renderNotes() {
+    var today = dkey(new Date());
+    $('dayLabel').textContent = dayLabel(state.noteDay);
+    $('dayNext').disabled = state.noteDay >= today; $('dayNext').style.opacity = state.noteDay >= today ? '0.4' : '1';
+    var list = state.notes.filter(function (n) { return n.d === state.noteDay; }).sort(byRecent);
+    $('noNotes').hidden = list.length > 0; $('notes').hidden = list.length === 0;
+    var total = 0; list.forEach(function (n) { if (n.amt) total += n.amt; });
+    $('noteTotal').textContent = total ? 'Money noted for this day: ' + fmt(total) + ' FCFA' : '';
+    var box = $('notes'); box.innerHTML = '';
+    list.forEach(function (n) {
+      var r = document.createElement('div'); r.className = 'row' + (n.done ? ' done' : '');
+      var tick = document.createElement('button'); tick.type = 'button'; tick.className = 'tick'; tick.textContent = '✓';
+      tick.setAttribute('aria-pressed', !!n.done); tick.setAttribute('aria-label', n.done ? 'Mark not done' : 'Mark done');
+      tick.addEventListener('click', function () { n.done = !n.done; persistNotes(); renderNotes(); });
+      var main = document.createElement('div'); main.className = 'rmain';
+      var b = document.createElement('b'); b.textContent = n.text; b.style.fontWeight = '500';
+      var s = document.createElement('span'); s.textContent = hhmm(n.t) + (n.amt ? ' · ' + fmt(n.amt) + ' FCFA' : '');
+      main.appendChild(b); main.appendChild(s);
+      var del = document.createElement('button'); del.type = 'button'; del.className = 'rbtn'; del.textContent = 'Delete';
+      arm(del, 'Delete', function () { state.notes = state.notes.filter(function (x) { return x.id !== n.id; }); persistNotes(); renderNotes(); });
+      r.appendChild(tick); r.appendChild(main); r.appendChild(del); box.appendChild(r);
+    });
+  }
+  $('dayPrev').addEventListener('click', function () { state.noteDay = shiftDay(state.noteDay, -1); renderNotes(); });
+  $('dayNext').addEventListener('click', function () { var today = dkey(new Date()); if (state.noteDay < today) { state.noteDay = shiftDay(state.noteDay, 1); renderNotes(); } });
+  $('noteAmt').addEventListener('input', function () { moneyInput($('noteAmt'), 12); });
+  $('noteAdd').addEventListener('click', function () {
+    var text = $('noteText').value.trim(), amt = Number(moneyInput($('noteAmt'), 12)) || 0;
+    if (!text && !amt) { toast('Write a note first'); return; }
+    state.notes.unshift({ id: uid(), d: state.noteDay, t: Date.now(), text: text || 'Money received', amt: amt, done: false });
+    state.notes = state.notes.slice(0, 2000);
+    persistNotes(); $('noteText').value = ''; $('noteAmt').value = ''; renderNotes(); toast('Note added');
+  });
+
+  /* ---------- settings ---------- */
+  $('copyVal').value = state.copy;
+  $('copyVal').addEventListener('input', function () { state.copy = $('copyVal').value.trim(); lsSet('momo.copy', state.copy); });
+  function renderAuto() {
+    $('askSw').setAttribute('aria-checked', !state.auto);
+    $('askSwHint').textContent = state.auto
+      ? 'Off: transactions are recorded as soon as you tap Dial, even if they fail or are cancelled.'
+      : 'On: "Did it go through?" appears when you return to the app, so failed or cancelled transactions never change your cash and float.';
+  }
+  function renderDupSw() { $('dupSw').setAttribute('aria-checked', state.dup); }
+  $('dupSw').addEventListener('click', function () { state.dup = !state.dup; lsSet('momo.dup', state.dup ? '1' : '0'); renderDupSw(); renderDupFz(); });
+  renderDupSw();
+  function renderDupFz() { $('dupFz').setAttribute('aria-checked', state.dupFuzzy); $('dupFz').disabled = !state.dup; $('dupFz').style.opacity = state.dup ? '1' : '0.5'; }
+  $('dupFz').addEventListener('click', function () { state.dupFuzzy = !state.dupFuzzy; lsSet('momo.dupfuzzy', state.dupFuzzy ? '1' : '0'); renderDupFz(); });
+  renderDupFz();
+  $('askSw').addEventListener('click', function () { state.auto = !state.auto; lsSet('momo.auto', state.auto ? '1' : '0'); renderAuto(); });
+  $('lowCash').value = state.lowCash ? fmt(state.lowCash) : '';
+  $('lowFloat').value = state.lowFloat ? fmt(state.lowFloat) : '';
+  $('lowCash').addEventListener('input', function () { state.lowCash = Number(moneyInput($('lowCash'), 12)) || 0; lsSet('momo.lowcash', String(state.lowCash)); renderBal(); });
+  $('lowFloat').addEventListener('input', function () { state.lowFloat = Number(moneyInput($('lowFloat'), 12)) || 0; lsSet('momo.lowfloat', String(state.lowFloat)); renderBal(); });
+
+  $('backupCopy').addEventListener('click', function () {
+    var data = {};
+    BACKUP_KEYS.forEach(function (k) { var v = lsGet(k); if (v !== null && v !== '') data[k] = v; });
+    var text = JSON.stringify({ app: 'momo-desk', v: 5, at: Date.now(), data: data });
+    $('backupBox').value = text;
+    if (copyText(text)) toast('Backup copied. Paste it somewhere safe.');
+    else { $('backupBox').focus(); $('backupBox').select(); toast('Select the text and copy it.'); }
+  });
+  var restoreBtn = $('backupRestore');
+  arm(restoreBtn, 'Restore', function () {
+    var parsed = null;
+    try { parsed = JSON.parse($('backupBox').value); } catch (e) {}
+    if (!parsed || parsed.app !== 'momo-desk' || !parsed.data) { toast('That is not a valid backup.'); return; }
+    BACKUP_KEYS.forEach(function (k) { if (typeof parsed.data[k] === 'string') lsSet(k, parsed.data[k]); });
+    toast('Restored. Reloading.');
+    setTimeout(function () { try { location.reload(); } catch (e) {} }, 600);
+  });
+
+  /* ---------- my jobs ---------- */
+  var jobEdit = { id: null, color: 0, effect: 'none' };
+  function jobById(id) { return state.jobs.filter(function (j) { return j.id === id; })[0] || null; }
+  function persistJobs() { lsSet('momo.jobs', JSON.stringify(state.jobs)); }
+  function renderJobsList() {
+    var box = $('jobsList'); box.innerHTML = '';
+    $('noJobs').hidden = state.jobs.length > 0; box.hidden = state.jobs.length === 0;
+    state.jobs.forEach(function (j) {
+      var r = document.createElement('div'); r.className = 'row';
+      var dot = document.createElement('span'); dot.className = 'rdot'; dot.style.background = 'var(--c-' + j.id + ')';
+      var main = document.createElement('div'); main.className = 'rmain';
+      var b = document.createElement('b'); b.textContent = j.name;
+      var sp = document.createElement('span'); sp.textContent = j.tpl; sp.style.fontFamily = 'var(--font-mono)';
+      main.appendChild(b); main.appendChild(sp);
+      var ed = document.createElement('button'); ed.type = 'button'; ed.className = 'rbtn'; ed.textContent = 'Edit';
+      ed.addEventListener('click', function () { openJobSheet(j.id); });
+      r.appendChild(dot); r.appendChild(main); r.appendChild(ed); box.appendChild(r);
+    });
+  }
+  function renderJobSheet() {
+    var box = $('jobColors'); box.innerHTML = '';
+    PALETTE.forEach(function (c, i) {
+      var b = document.createElement('button'); b.type = 'button'; b.className = 'swatch'; b.setAttribute('aria-label', 'Color ' + (i + 1));
+      b.style.setProperty('--swl', c.l); b.style.setProperty('--swd', c.d); b.setAttribute('aria-pressed', i === jobEdit.color);
+      b.addEventListener('click', function () { jobEdit.color = i; renderJobSheet(); });
+      box.appendChild(b);
+    });
+    var ps = parseTpl($('jobTpl').value);
+    var pv = $('jobPreview');
+    if (ps.ok) {
+      pv.textContent = 'Dials ' + $('jobTpl').value.trim().replace(/\{number\}/g, '677000000').replace(/\{amount\}/g, '5000') + (ps.hasNum || ps.hasAmt ? ' (example values)' : '');
+      pv.className = 'hint ok';
+    } else { pv.textContent = ps.msg; pv.className = $('jobTpl').value.trim() ? 'hint bad' : 'hint'; }
+    var canFx = !!(ps.ok && ps.hasAmt);
+    if (!canFx) jobEdit.effect = 'none';
+    ['None', 'Up', 'Down'].forEach(function (k) {
+      var b = $('jobFx' + k); b.setAttribute('aria-pressed', jobEdit.effect === k.toLowerCase()); b.disabled = k !== 'None' && !canFx; b.style.opacity = b.disabled ? '0.45' : '1';
+    });
+    $('jobFxHint').textContent = !canFx ? 'Add {amount} to the code if you want this job to change your cash and float.'
+      : jobEdit.effect === 'up' ? 'Cash goes up and float goes down, like a deposit.'
+      : jobEdit.effect === 'down' ? 'Cash goes down and float goes up, like a withdrawal.' : 'Your cash and float stay as they are.';
+    var ok = ps.ok && $('jobName').value.trim().length > 0;
+    $('jobSave').disabled = !ok; $('jobSave').style.opacity = ok ? '1' : '0.5';
+  }
+  function openJobSheet(id) {
+    var j = id ? jobById(id) : null;
+    jobEdit = { id: j ? j.id : null, color: j ? j.color : 0, effect: j ? j.effect : 'none' };
+    $('jobName').value = j ? j.name : ''; $('jobTpl').value = j ? j.tpl : '';
+    $('jobTitle').textContent = j ? 'Edit job' : 'New job';
+    $('jobDelete').hidden = !j;
+    renderJobSheet(); $('jobSheet').hidden = false;
+    try { $('jobName').focus(); } catch (e) {}
+  }
+  function closeJobSheet() { $('jobSheet').hidden = true; }
+  function insertTpl(txt) {
+    var el = $('jobTpl'), a = el.selectionStart == null ? el.value.length : el.selectionStart, z = el.selectionEnd == null ? a : el.selectionEnd;
+    el.value = el.value.slice(0, a) + txt + el.value.slice(z);
+    el.focus(); try { el.setSelectionRange(a + txt.length, a + txt.length); } catch (e) {}
+    renderJobSheet();
+  }
+  $('jobNew').addEventListener('click', function () { openJobSheet(null); });
+  $('jobName').addEventListener('input', renderJobSheet);
+  $('jobTpl').addEventListener('input', renderJobSheet);
+  $('jobInsNum').addEventListener('click', function () { insertTpl('{number}'); });
+  $('jobInsAmt').addEventListener('click', function () { insertTpl('{amount}'); });
+  $('jobFxNone').addEventListener('click', function () { jobEdit.effect = 'none'; renderJobSheet(); });
+  $('jobFxUp').addEventListener('click', function () { jobEdit.effect = 'up'; renderJobSheet(); });
+  $('jobFxDown').addEventListener('click', function () { jobEdit.effect = 'down'; renderJobSheet(); });
+  $('jobCancel').addEventListener('click', closeJobSheet);
+  $('jobSheet').addEventListener('click', function (e) { if (e.target === $('jobSheet')) closeJobSheet(); });
+  $('jobSave').addEventListener('click', function () {
+    var name = $('jobName').value.trim().slice(0, 14), tpl = $('jobTpl').value.trim(), ps = parseTpl(tpl);
+    if (!name || !ps.ok) return;
+    var effect = ps.hasAmt ? jobEdit.effect : 'none';
+    var id = jobEdit.id;
+    if (id) { var j = jobById(id); j.name = name; j.tpl = tpl; j.color = jobEdit.color; j.effect = effect; }
+    else { id = 'c' + uid(); state.jobs.push({ id: id, name: name, tpl: tpl, color: jobEdit.color, effect: effect }); }
+    persistJobs(); rebuildCustom();
+    state.type = id; lsSet('momo.type', id);
+    renderTypes(); renderJobsList(); closeJobSheet(); update(); renderLedger();
+    toast('Saved. ' + name + ' is selected.');
+    advance('job');
+  });
+  arm($('jobDelete'), 'Delete job', function () {
+    var id = jobEdit.id; if (!id) return;
+    state.jobs = state.jobs.filter(function (j) { return j.id !== id; }); persistJobs();
+    state.pending = state.pending.filter(function (p) { return p.type !== id; }); persistPending();
+    rebuildCustom();
+    if (state.type === id) { state.type = 'deposit'; lsSet('momo.type', 'deposit'); }
+    renderTypes(); renderJobsList(); closeJobSheet(); renderBal(); update(); renderLedger();
+    toast('Job deleted');
+  });
+
+  /* ---------- calculator ---------- */
+  function chargeOf(a) { return Math.round(a * state.chargePct / 100); }
+  function outRows(id, rows) {
+    var box = $(id); box.innerHTML = '';
+    rows.forEach(function (r) {
+      var d = document.createElement('div'); d.className = 'outrow' + (r[2] ? ' strong' : '') + (r[3] ? ' bad' : '');
+      var l = document.createElement('span'); l.textContent = r[0];
+      var v = document.createElement('b'); v.textContent = r[1];
+      d.appendChild(l); d.appendChild(v); box.appendChild(d);
+    });
+  }
+  function calcNum(id) { return Number(moneyInput($(id), 10)) || 0; }
+  function renderCalc() {
+    var pt = String(state.chargePct);
+    $('rateNote').textContent = 'Charge rate: ' + pt + '%. You can change it in Settings.';
+    var g = calcNum('cgGiven'), due = calcNum('cgDue');
+    if (!g && !due) outRows('cgOut', []);
+    else if (g >= due) outRows('cgOut', [['Change to give back', fmt(g - due) + ' FCFA', true]]);
+    else outRows('cgOut', [['Customer still owes', fmt(due - g) + ' FCFA', true, true]]);
+
+    var a = calcNum('chAmt');
+    if (!a) outRows('chOut', []);
+    else { var c = chargeOf(a); outRows('chOut', [['Charge (' + pt + '%)', fmt(c) + ' FCFA'], ['Amount + charge', fmt(a + c) + ' FCFA', true], ['Amount − charge', fmt(Math.max(0, a - c)) + ' FCFA']]); }
+
+    var bal = calcNum('wdBal'), w = calcNum('wdAmt'), rows = [];
+    if (w) {
+      var ch = chargeOf(w), need = w + ch;
+      rows.push(['Charge on ' + fmt(w), fmt(ch) + ' FCFA'], ['Needed in phone (amount + charge)', fmt(need) + ' FCFA']);
+      if (bal >= need) rows.push(['Client must add in cash', '0 FCFA. Enough already.', true]);
+      else rows.push(['Client must add in cash', fmt(need - bal) + ' FCFA', true, true]);
+    }
+    if (bal) {
+      var mx = Math.floor(bal / (1 + state.chargePct / 100));
+      while (mx > 0 && mx + chargeOf(mx) > bal) mx--;
+      while (mx + 1 + chargeOf(mx + 1) <= bal) mx++;
+      rows.push(['You can pay out with ' + fmt(bal) + ' in phone', fmt(mx) + ' FCFA (charge ' + fmt(chargeOf(mx)) + ')', !w]);
+    }
+    outRows('wdOut', rows);
+  }
+  ['cgGiven', 'cgDue', 'chAmt', 'wdBal', 'wdAmt'].forEach(function (id) { $(id).addEventListener('input', renderCalc); });
+  Array.prototype.forEach.call(document.querySelectorAll('[data-clear]'), function (b) {
+    b.addEventListener('click', function () { b.getAttribute('data-clear').split(',').forEach(function (id) { $(id).value = ''; }); renderCalc(); });
+  });
+
+  /* simple calculator: + - x / with the usual order of operations */
+  var kExp = '', kEq = false;
+  function evalExp(str) {
+    var t = str.match(/\d+\.?\d*|\.\d+|[-+*\/]/g);
+    if (!t || t.join('') !== str) return null;
+    var i = 0, isOp = function (x) { return /^[-+*\/]$/.test(x); };
+    function num() {
+      var neg = false;
+      if (t[i] === '-') { neg = true; i++; }
+      if (i >= t.length || isOp(t[i])) return NaN;
+      var v = parseFloat(t[i++]); return neg ? -v : v;
+    }
+    var term = num(), sum = 0;
+    if (isNaN(term)) return null;
+    while (i < t.length) {
+      var op = t[i++], n = num();
+      if (isNaN(n)) return null;
+      if (op === '*') term *= n;
+      else if (op === '/') { if (n === 0) return null; term /= n; }
+      else { sum += term; term = op === '-' ? -n : n; }
+    }
+    return sum + term;
+  }
+  function fmtNum(n) {
+    var x = String(parseFloat(n.toFixed(8))), neg = x.charAt(0) === '-';
+    if (neg) x = x.slice(1);
+    var p = x.split('.'); p[0] = fmt(p[0]);
+    return (neg ? '−' : '') + p.join('.');
+  }
+  function renderK() {
+    $('kExp').textContent = kExp ? kExp.replace(/\*/g, '×').replace(/\//g, '÷').replace(/-/g, '−') : '0';
+    var r = evalExp(kExp);
+    $('kRes').textContent = r !== null ? fmtNum(r) : '';
+  }
+  function kPress(k) {
+    var ops = '+-*/', last = kExp.slice(-1);
+    if (k === 'C') { kExp = ''; kEq = false; }
+    else if (k === 'B') { kExp = kExp.slice(0, -1); kEq = false; }
+    else if (k === '=') { var r = evalExp(kExp); if (r !== null) { kExp = String(parseFloat(r.toFixed(8))); kEq = true; } }
+    else if (ops.indexOf(k) > -1) {
+      kEq = false;
+      if (!kExp) { if (k === '-') kExp = '-'; }
+      else if (ops.indexOf(last) > -1) { if (kExp.length > 1) kExp = kExp.slice(0, -1) + k; }
+      else kExp += k;
+    } else {
+      if (kEq) { kExp = ''; kEq = false; }
+      if (k === '.') {
+        var cur = kExp.split(/[-+*\/]/).pop();
+        if (cur.indexOf('.') > -1) return;
+        if (!cur) k = '0.';
+      }
+      kExp += k;
+    }
+    kExp = kExp.slice(0, 60);
+    renderK();
+  }
+  function renderCalcKeys() {
+    var KEYS = [['C', 'C', 'clr'], ['⌫', 'B', ''], ['÷', '/', 'op'], ['×', '*', 'op'], ['7', '7'], ['8', '8'], ['9', '9'], ['−', '-', 'op'],
+      ['4', '4'], ['5', '5'], ['6', '6'], ['+', '+', 'op'], ['1', '1'], ['2', '2'], ['3', '3'], ['=', '=', 'eq'], ['0', '0'], ['00', '00'], ['.', '.']];
+    var box = $('kPad'); box.innerHTML = '';
+    KEYS.forEach(function (k) {
+      var b = document.createElement('button'); b.type = 'button'; b.className = 'key' + (k[2] ? ' ' + k[2] : ''); b.textContent = k[0];
+      b.setAttribute('aria-label', k[1] === 'B' ? 'Backspace' : k[1] === 'C' ? 'Clear' : k[0]);
+      b.addEventListener('click', function () { kPress(k[1]); });
+      box.appendChild(b);
+    });
+    renderK();
+  }
+  $('chargePct').value = String(state.chargePct);
+  $('chargePct').addEventListener('input', function () {
+    state.chargePct = parsePct($('chargePct').value); lsSet('momo.chargepct', String(state.chargePct)); renderCalc();
+  });
+  function renderDelay() {
+    var box = $('delaySeg'); box.innerHTML = '';
+    DELAYS.forEach(function (sec) {
+      var b = document.createElement('button'); b.type = 'button'; b.textContent = sec ? sec + ' s' : 'Right away';
+      b.setAttribute('aria-pressed', state.askDelay === sec);
+      b.addEventListener('click', function () { state.askDelay = sec; lsSet('momo.delay', String(sec)); renderDelay(); });
+      box.appendChild(b);
+    });
+  }
+
+  /* ---------- search the day's transactions ---------- */
+  $('cSearch').addEventListener('input', function () { state.showAllToday = false; renderLedger(); });
+  $('cSearchClr').addEventListener('click', function () { $('cSearch').value = ''; renderLedger(); $('cSearch').focus(); });
+
+  /* ---------- ask someone for cash or float on WhatsApp ---------- */
+  var PRESETS = {
+    cash: ['Please can you help me with cash.', 'I am short of cash. Please help me.', 'Please can you bring me some cash.'],
+    float: ['Please can you help me with float.', 'I am short of float. Please send to my number.', 'Please can you send me float.']
+  };
+  var askState = { kind: 'cash', preset: 0, dirty: false };
+  function waNumber(raw) {
+    var d = String(raw).replace(/\D/g, '').replace(/^00/, '');
+    if (/^6\d{8}$/.test(d)) return '237' + d;
+    if (/^237\d{9}$/.test(d)) return d;
+    if (d.length >= 10 && d.length <= 15 && d.charAt(0) !== '0') return d;
+    return '';
+  }
+  function localNum(wa) { return /^237\d{9}$/.test(wa) ? wa.slice(3) : wa; }
+  function askAmount() { return Number($('askAmt').value.replace(/\D/g, '')) || 0; }
+  function buildMsg() {
+    var name = $('askName').value.trim().split(/\s+/)[0] || '', a = askAmount();
+    var core = PRESETS[askState.kind][askState.preset];
+    return (name ? 'Hello ' + name + ',' : 'Hello,') + '\n' + core + (a ? ' I need ' + fmt(a) + ' FCFA.' : '') + ' Thank you.';
+  }
+  function renderPresets() {
+    var box = $('askPresets'); box.innerHTML = '';
+    PRESETS[askState.kind].forEach(function (txt, i) {
+      var b = document.createElement('button'); b.type = 'button'; b.className = 'chip'; b.textContent = txt.replace(/\.$/, '');
+      b.setAttribute('aria-pressed', i === askState.preset);
+      b.addEventListener('click', function () { askState.preset = i; askState.dirty = false; renderPresets(); askUpdate(); });
+      box.appendChild(b);
+    });
+    $('askCash').setAttribute('aria-pressed', askState.kind === 'cash'); $('askFloat').setAttribute('aria-pressed', askState.kind === 'float');
+  }
+  var pickedAlts = [];
+  function renderHelpers() {
+    var box = $('helpers'); box.innerHTML = '';
+    var q = $('askName').value.trim().toLowerCase(), qd = $('askNum').value.replace(/\D/g, '').replace(/^237/, '');
+    var seen = {}, list = [];
+    function add(x, own, alt) { if (!x.num || seen[x.num]) return; seen[x.num] = 1; list.push({ name: x.name || '', num: x.num, own: own, alt: alt, ref: x }); }
+    pickedAlts.forEach(function (x) { add(x, false, true); });
+    state.helpers.slice().sort(byRecent).forEach(function (x) { add(x, true); });
+    state.contacts.slice().sort(byRecent).forEach(function (x) { add(x, false); });
+    var searching = !!q || qd.length >= 2;
+    list = list.filter(function (x) {
+      if (x.alt) return true;
+      if (!searching) return x.own;
+      return (q && x.name.toLowerCase().indexOf(q) > -1) || (qd.length >= 2 && x.num.indexOf(qd) > -1);
+    }).slice(0, 12);
+    list.forEach(function (h) {
+      var w = document.createElement('div'); w.className = 'contact';
+      var p = document.createElement('button'); p.type = 'button'; p.className = 'pick';
+      var nm = document.createElement('b'); nm.textContent = h.name || pretty(h.num); p.appendChild(nm);
+      if (h.name) { var nu = document.createElement('span'); nu.textContent = h.num; p.appendChild(nu); }
+      p.addEventListener('click', function () { $('askNum').value = h.num; $('askName').value = h.name || ''; askState.dirty = false; pickedAlts = []; askUpdate(); });
+      w.appendChild(p);
+      if (h.own) {
+        var d = document.createElement('button'); d.type = 'button'; d.className = 'del'; d.textContent = '\u00d7';
+        d.setAttribute('aria-label', 'Remove ' + (h.name || h.num));
+        d.addEventListener('click', function () {
+          state.helpers = state.helpers.filter(function (x) { return x !== h.ref; }); lsSet('momo.helpers', JSON.stringify(state.helpers)); renderHelpers();
+        });
+        w.appendChild(d);
+      }
+      box.appendChild(w);
+    });
+    if (searching && !list.length) { var em = document.createElement('p'); em.className = 'empty'; em.textContent = 'No saved contact matches. You can still type the number.'; box.appendChild(em); }
+  }
+  function askUpdate() {
+    renderHelpers();
+    var a = moneyInput($('askAmt'), 9);
+    $('askWords').textContent = a ? words(a) : '';
+    var wa = waNumber($('askNum').value);
+    var nh = $('askNumHint');
+    if (!$('askNum').value.trim()) { nh.textContent = ''; nh.className = 'hint'; }
+    else if (wa) { nh.textContent = 'WhatsApp +' + wa; nh.className = 'hint ok'; }
+    else { nh.textContent = 'Enter a 9 digit number starting with 6, or a full international number.'; nh.className = 'hint bad'; }
+    if (!askState.dirty) $('askMsg').value = buildMsg();
+    var ok = !!wa && Number(a) > 0;
+    var go = $('askGo');
+    go.setAttribute('aria-disabled', ok ? 'false' : 'true');
+    go.setAttribute('href', ok ? 'https://wa.me/' + wa + '?text=' + encodeURIComponent($('askMsg').value) : '#');
+  }
+  $('askToggle').addEventListener('click', function () {
+    var open = $('askPanel').hidden;
+    $('askPanel').hidden = !open; $('askToggle').setAttribute('aria-expanded', open);
+    $('askToggleText').textContent = open ? 'Close the ask form' : 'Ask someone for cash or float'; $('askToggle').classList.toggle('open', open);
+    if (open) { renderHelpers(); askUpdate(); try { $('askPanel').scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {} }
+  });
+  $('askCash').addEventListener('click', function () { askState.kind = 'cash'; askState.preset = 0; askState.dirty = false; renderPresets(); askUpdate(); });
+  $('askFloat').addEventListener('click', function () { askState.kind = 'float'; askState.preset = 0; askState.dirty = false; renderPresets(); askUpdate(); });
+  $('askNum').addEventListener('input', askUpdate);
+  $('askPick').addEventListener('click', function () {
+    if (!(navigator.contacts && navigator.contacts.select)) {
+      toast('Phone contacts cannot be opened here. Type a name to search saved contacts.');
+      try { $('askName').focus(); } catch (e) {}
+      return;
+    }
+    var pr;
+    try { pr = navigator.contacts.select(['name', 'tel'], { multiple: false }); } catch (e) { toast('Could not open contacts. Type a name to search saved ones.'); return; }
+    pr.then(function (res) {
+      if (!res || !res.length) return;
+      var c = res[0], nm = ((c.name && c.name[0]) || '').slice(0, 40), seen = {}, nums = [];
+      (c.tel || []).forEach(function (t) { var w = waNumber(t); if (!w) return; var l = localNum(w); if (!seen[l]) { seen[l] = 1; nums.push(l); } });
+      if (!nums.length) { toast('That contact has no usable number.'); return; }
+      pickedAlts = nums.slice(1).map(function (n) { return { name: nm, num: n }; });
+      $('askNum').value = nums[0]; $('askName').value = nm; askState.dirty = false; askUpdate();
+    }, function () { toast('Could not open contacts.'); });
+  });
+  $('askName').addEventListener('input', askUpdate);
+  $('askAmt').addEventListener('input', askUpdate);
+  $('askNumClr').addEventListener('click', function () { $('askNum').value = ''; $('askName').value = ''; pickedAlts = []; askUpdate(); $('askName').focus(); });
+  $('askMsg').addEventListener('input', function () { askState.dirty = true; askUpdate(); });
+  $('askReset').addEventListener('click', function () { askState.dirty = false; askUpdate(); });
+  $('askCopy').addEventListener('click', function () {
+    if (copyText($('askMsg').value)) toast('Message copied'); else toast('Select the message and copy it.');
+  });
+  $('askGo').addEventListener('click', function (e) {
+    if ($('askGo').getAttribute('aria-disabled') === 'true') { e.preventDefault(); return; }
+    var wa = waNumber($('askNum').value), name = $('askName').value.trim(), a = askAmount();
+    var num = localNum(wa);
+    var h = state.helpers.filter(function (x) { return x.num === num; })[0];
+    if (h) { h.t = Date.now(); if (name) h.name = name; } else { state.helpers.unshift({ name: name, num: num, t: Date.now() }); }
+    state.helpers = state.helpers.slice(0, 40); lsSet('momo.helpers', JSON.stringify(state.helpers));
+    lastDialAt = Date.now(); needTop = true;
+    state.pending.push({ id: uid(), t: Date.now(), type: 'ask', kind: askState.kind, num: num, name: name, amt: a });
+    state.pending = state.pending.slice(-20); persistPending();
+    renderBal(); renderHelpers();
+    toast('Opening WhatsApp. Confirm here when they send it.');
+  });
+
+
+  /* ---------- incoming client requests (JSON from the client page) ---------- */
+  var REQ_JOBS = { deposit: 'Deposit', withdraw: 'Withdraw', airtime: 'Airtime', float: 'Float', gooddeal: 'Good deal' };
+  var FLOAT_MODES = { send_to_client: 1, receive_from_client: 1 };
+  var BUNDLES = { data: 'Data only', call: 'Calls only', call_data: 'Calls + data' };
+  var reqQueue = [], reqCur = null, reqDb = null;
+  var reqSeen = loadJSON('momo.reqseen', []); if (!Array.isArray(reqSeen)) reqSeen = [];
+
+  /* Validates untrusted JSON. Unknown jobs or bad numbers are ignored. Extra fields are kept in raw for future jobs. */
+  function cleanReq(raw) {
+    var r = raw;
+    if (typeof r === 'string') { try { r = JSON.parse(r); } catch (e) { return null; } }
+    if (!r || typeof r !== 'object' || r.v !== 1 || typeof r.id !== 'string' || !/^[A-Za-z0-9_-]{3,40}$/.test(r.id)) return null;
+    if (!REQ_JOBS[r.job]) return null;
+    var num = String(r.num || '').replace(/\D/g, '').replace(/^237/, '');
+    var amt = Number(r.amt);
+    if (!validNumber(num) || !isFinite(amt) || amt < 1 || amt > 999999999 || Math.floor(amt) !== amt) return null;
+    var d = r.details && typeof r.details === 'object' ? r.details : {}, det = {};
+    if (r.job === 'float') { if (!FLOAT_MODES[d.floatMode]) return null; det.floatMode = d.floatMode; }
+    if (r.job === 'gooddeal') { if (!BUNDLES[d.bundle]) return null; det.bundle = d.bundle; }
+    return { id: r.id, t: Number(r.t) || Date.now(), job: r.job, details: det, num: num, amt: amt, cash: amt };
+  }
+
+  /* Translates a request into what the desk needs: which job to select, what the client asked for in plain words, and the code. */
+  function planReq(c) {
+    var A = fmt(String(c.amt)) + ' FCFA', p = { typeId: c.job, ask: '', detail: '', code: '', note: '' };
+    if (c.job === 'deposit') p.ask = 'Wants to deposit ' + A;
+    else if (c.job === 'withdraw') p.ask = 'Wants to withdraw ' + A;
+    else if (c.job === 'airtime') p.ask = 'Wants ' + A + ' airtime';
+    else if (c.job === 'float' && c.details.floatMode === 'send_to_client') { p.ask = 'Wants you to send them ' + A + ' float'; p.detail = 'Send me float'; }
+    else if (c.job === 'float') {
+      var C = fmt(String(c.cash || c.amt)) + ' FCFA';
+      p.typeId = null; p.detail = 'They send float, you give cash';
+      p.ask = 'Will send you ' + A + ' float and wants ' + C + ' cash back';
+      p.note = 'Client is sending you ' + A + ' float. When it arrives, give them ' + C + ' cash. No code to dial. Your cash goes down ' + C + ' and your float goes up ' + A + '.';
+      return p;
+    }
+    else if (c.job === 'gooddeal') { p.detail = BUNDLES[c.details.bundle]; p.ask = 'Wants a Good deal: ' + p.detail + ', ' + A; }
+    p.code = typeById(p.typeId).build(c.num, String(c.amt));
+    p.note = p.ask + ' \u00b7 ' + pretty(c.num) + (p.detail && c.job === 'gooddeal' ? ' \u00b7 ' + p.detail : '');
+    return p;
+  }
+
+  var reqOrig = null, cashTouched = false;
+  function fillJobSel() {
+    var sel = $('iJobSel'); if (sel.options.length) return;
+    Object.keys(REQ_JOBS).forEach(function (k) { var o = document.createElement('option'); o.value = k; o.textContent = REQ_JOBS[k]; sel.appendChild(o); });
+  }
+  /* Reads the edit fields into reqCur. Returns an error text, or '' when everything is valid. */
+  function readReqEdits() {
+    var c = reqCur; if (!c) return 'No request';
+    c.job = $('iJobSel').value;
+    c.details = {};
+    if (c.job === 'float') c.details.floatMode = $('iFloatSel').value;
+    if (c.job === 'gooddeal') c.details.bundle = $('iBundleSel').value;
+    c.num = normNumber($('iNumIn').value);
+    c.amt = Number($('iAmtIn').value.replace(/\D/g, '')) || 0;
+    if (!validNumber(c.num)) return 'Number needs 9 digits starting with 6 (' + c.num.length + ' so far).';
+    if (c.amt < 1 || c.amt > 999999999) return c.job === 'float' && c.details.floatMode === 'receive_from_client' ? 'Enter how much float they are sending.' : 'Enter an amount.';
+    if (c.job === 'float' && c.details.floatMode === 'receive_from_client') {
+      c.cash = Number($('iCashIn').value.replace(/\D/g, '')) || 0;
+      if (c.cash < 1 || c.cash > 999999999) return 'Enter how much cash you give them.';
+    } else c.cash = c.amt;
+    return '';
+  }
+  function reqChanged() {
+    var o = reqOrig, c = reqCur, ch = [];
+    if (o.job !== c.job) ch.push('job');
+    if (o.num !== c.num) ch.push('number');
+    if (o.amt !== c.amt) ch.push('amount');
+    if (c.job === 'float' && c.details.floatMode === 'receive_from_client' && o.cash !== c.cash) ch.push('cash');
+    if (JSON.stringify(o.details) !== JSON.stringify(c.details)) ch.push('details');
+    return ch;
+  }
+  function refreshReq() {
+    var c = reqCur; if (!c) return;
+    if (!cashTouched && $('iFloatSel').value === 'receive_from_client' && $('iJobSel').value === 'float') $('iCashIn').value = $('iAmtIn').value;
+    var err = readReqEdits();
+    $('iFloatBox').hidden = c.job !== 'float';
+    var isIn = c.job === 'float' && c.details.floatMode === 'receive_from_client';
+    $('iCashBox').hidden = !isIn;
+    $('iAmtLbl').textContent = isIn ? 'Float they send (FCFA)' : 'Amount (FCFA)';
+    if (isIn && !cashTouched) $('iCashIn').value = $('iAmtIn').value;
+    $('iBundleBox').hidden = c.job !== 'gooddeal';
+    $('iHint').textContent = err; $('iHint').className = 'hint' + (err ? ' bad' : '');
+    var p = planReq(c), dial = $('iDial');
+    var ready = !err && !!p.typeId;
+    $('iAsk').textContent = err ? '' : p.ask;
+    $('iCode').textContent = p.code || (p.typeId ? '' : 'No code to dial');
+    $('iCode').hidden = !$('iCode').textContent;
+    dial.hidden = !p.typeId;
+    dial.setAttribute('aria-disabled', ready ? 'false' : 'true');
+    dial.setAttribute('href', ready ? 'tel:' + encodeURIComponent(p.code) : '#');
+    $('iYes').hidden = !!p.typeId; $('iYes').disabled = !!err;
+    var ch = reqChanged();
+    $('iEdited').textContent = ch.length ? 'Edited: ' + ch.join(', ') : '';
+  }
+  function showReq(c) {
+    fillJobSel();
+    reqCur = c; reqOrig = JSON.parse(JSON.stringify(c));
+    cashTouched = c.cash !== c.amt;
+    $('iJobSel').value = c.job;
+    $('iFloatSel').value = c.details.floatMode || 'send_to_client';
+    $('iBundleSel').value = c.details.bundle || 'data';
+    $('iNumIn').value = c.num;
+    $('iAmtIn').value = fmt(String(c.amt));
+    $('iCashIn').value = fmt(String(c.cash || c.amt));
+    refreshReq(); renderQueue();
+    $('incoming').hidden = false;
+    try { if (navigator.vibrate) navigator.vibrate([200, 100, 200]); } catch (e) {}
+  }
+  function nextReq() { reqCur = null; reqOrig = null; $('incoming').hidden = true; if (reqQueue.length) showReq(reqQueue.shift()); }
+
+  /* ---- several people at once: the waiting list, repeats and look-alikes ---- */
+  function reqLabel(q) {
+    var p = planReq(q), nm = findContact(q.num);
+    var job = q.job === 'float' ? (q.details.floatMode === 'receive_from_client' ? 'Float in' : 'Float out') : REQ_JOBS[q.job];
+    return job + ' \u00b7 ' + fmt(String(q.amt)) + ' \u00b7 ' + (nm && nm.name ? nm.name : pretty(q.num));
+  }
+  function reqDot(q) { return q.job === 'float' && q.details.floatMode === 'receive_from_client' ? 'var(--c-float)' : 'var(--c-' + q.job + ')'; }
+  /* same person, or the same job and a close number and amount */
+  function reqTwin(a, b) {
+    if (a.num === b.num) return true;
+    return a.job === b.job && hamming(a.num, b.num) <= 2 && amtClose(a.amt, b.amt);
+  }
+  function reqRepeat(a, b) {
+    return a.job === b.job && (a.details.floatMode || '') === (b.details.floatMode || '') && (a.num === b.num || hamming(a.num, b.num) <= 2) && amtClose(a.amt, b.amt);
+  }
+  function renderQueue() {
+    var box = $('iQueue'), n = reqQueue.length;
+    $('iMore').hidden = !n; $('iMore').textContent = n + (n === 1 ? ' more request waiting. You are on the oldest first.' : ' more requests waiting. You are on the oldest first.');
+    box.innerHTML = ''; box.hidden = !n;
+    if (n) {
+      var h = document.createElement('div'); h.className = 'qhead'; h.textContent = 'Waiting. Tap one to handle it first.'; box.appendChild(h);
+      reqQueue.forEach(function (q) {
+        var b = document.createElement('button'); b.type = 'button'; b.className = 'qitem' + (reqCur && reqTwin(reqCur, q) ? ' twin' : '');
+        var d = document.createElement('span'); d.className = 'qdot'; d.style.background = reqDot(q);
+        var t = document.createElement('span'); t.className = 'qtx'; t.textContent = (reqCur && reqTwin(reqCur, q) ? '\u26a0 ' : '') + reqLabel(q);
+        var g = document.createElement('span'); g.className = 'qgo'; g.textContent = hhmm(q.t);
+        b.appendChild(d); b.appendChild(t); b.appendChild(g);
+        b.addEventListener('click', function () { switchReq(q); });
+        box.appendChild(b);
+      });
+    }
+    renderTwin();
+  }
+  function renderTwin() {
+    var c = reqCur, tw = $('iTwin'), btn = $('iTwinBtn');
+    if (!c) { tw.hidden = true; return; }
+    var same = reqQueue.filter(function (q) { return q.num === c.num; }).length;
+    var reps = reqQueue.filter(function (q) { return reqRepeat(c, q); }).length;
+    var msgs = [];
+    if (reps) msgs.push(reps + (reps === 1 ? ' other request looks exactly like this one.' : ' other requests look exactly like this one.'));
+    else if (same) msgs.push('This number has ' + same + ' more ' + (same === 1 ? 'request' : 'requests') + ' waiting.');
+    var t = planReq(c), probe = { id: 'probe', t: Date.now(), type: t.typeId || 'swap', num: c.num, amt: c.amt };
+    var near = state.dup ? similarTo(probe).filter(function (g) { return g.item.id !== 'probe'; }) : [];
+    if (near.length) msgs.push('You already did something similar a moment ago. Check Cash before you accept.');
+    tw.hidden = !msgs.length; $('iTwinTx').textContent = msgs.join(' ');
+    btn.hidden = !reps;
+  }
+  function switchReq(q) {
+    if (!reqCur) return;
+    reqQueue = reqQueue.filter(function (x) { return x.id !== q.id; });
+    var back = JSON.parse(JSON.stringify(reqOrig));
+    reqQueue.push(back); reqQueue.sort(function (a, b) { return a.t - b.t; });
+    showReq(q);
+  }
+  $('iTwinBtn').addEventListener('click', function () {
+    var c = reqCur; if (!c) return;
+    var gone = reqQueue.filter(function (q) { return reqRepeat(c, q); });
+    gone.forEach(function (q) { setReqStatus(q, 'rejected'); });
+    reqQueue = reqQueue.filter(function (q) { return !reqRepeat(c, q); });
+    toast(gone.length + (gone.length === 1 ? ' repeat rejected' : ' repeats rejected'));
+    renderQueue();
+  });
+  function enqueue(raw) {
+    var c = cleanReq(raw);
+    if (!c || reqSeen.indexOf(c.id) > -1 || (reqCur && reqCur.id === c.id) || reqQueue.some(function (q) { return q.id === c.id; })) return;
+    if (reqCur) { reqQueue.push(c); reqQueue.sort(function (a, b) { return a.t - b.t; }); renderQueue(); toast('Another request just came in'); try { if (navigator.vibrate) navigator.vibrate(120); } catch (e) {} }
+    else showReq(c);
+  }
+  function setReqStatus(c, st, fix) {
+    reqSeen.push(c.id); reqSeen = reqSeen.slice(-100); lsSet('momo.reqseen', JSON.stringify(reqSeen));
+    var T = window.MOMO_TRANSPORT;
+    if (T && T.setStatus) { try { T.setStatus(c.id, st, fix); } catch (e) {} return; }
+    if (reqDb) { try { var u = { status: st }; if (fix) { u.job = fix.job; u.details = fix.details; u.num = fix.num; u.phone = '237' + fix.num; u.amt = fix.amt; u.cash = fix.cash; u.edited = true; } reqDb.collection('requests').doc(c.id).update(u); } catch (e) {} }
+  }
+  function showReqNote(txt) { $('reqNote').hidden = !txt; $('reqNoteTx').textContent = txt || ''; }
+
+  ['iJobSel', 'iFloatSel', 'iBundleSel'].forEach(function (id) { $(id).addEventListener('change', function () { refreshReq(); renderTwin(); }); });
+  $('iNumIn').addEventListener('input', function () { refreshReq(); renderTwin(); });
+  $('iAmtIn').addEventListener('input', function () {
+    var d = $('iAmtIn').value.replace(/\D/g, '');
+    $('iAmtIn').value = d ? fmt(String(Number(d))) : '';
+    refreshReq(); renderTwin();
+  });
+  $('iCashIn').addEventListener('input', function () {
+    var d = $('iCashIn').value.replace(/\D/g, '');
+    $('iCashIn').value = d ? fmt(String(Number(d))) : '';
+    cashTouched = true; refreshReq();
+  });
+  /* Copies the (possibly corrected) request onto the desk so balance tracking, contacts and the confirm sheet behave as usual. */
+  function fillDesk(c, p) {
+    state.type = p.typeId; lsSet('momo.type', p.typeId);
+    $('num').value = c.num; $('amt').value = String(c.amt);
+    showTab('desk'); renderTypes(); update();
+  }
+  function fixOf(c) { return reqChanged().length ? JSON.parse(JSON.stringify(c)) : null; }
+
+  $('iDial').addEventListener('click', function (e) {
+    var c = reqCur;
+    if (!c || $('iDial').getAttribute('aria-disabled') === 'true') { e.preventDefault(); return; }
+    if (readReqEdits()) { e.preventDefault(); return; }
+    var p = planReq(c); if (!p.typeId) { e.preventDefault(); return; }
+    setReqStatus(c, 'accepted', fixOf(c));
+    fillDesk(c, p); showReqNote(p.note);
+    var big = typeById(p.typeId).amt && c.amt >= BIG;
+    reqCur = null; reqOrig = null; $('incoming').hidden = true;
+    if (big) { e.preventDefault(); openConfirm(); return; }   /* the "Are you sure?" sheet dials next */
+    proceedDial();
+    if (reqQueue.length) setTimeout(function () { if (!reqCur) nextReq(); }, 600);
+  });
+  /* For requests with no code (client sends float, you give cash). */
+  $('iYes').addEventListener('click', function () {
+    var c = reqCur; if (!c || readReqEdits()) return; var p = planReq(c);
+    setReqStatus(c, 'accepted', fixOf(c));
+    var fl = findContact(c.num);
+    state.pending.push({ id: uid(), t: Date.now(), type: 'swap', num: c.num, name: fl && fl.name ? fl.name : '', amt: c.amt, cash: c.cash || c.amt });
+    state.pending = state.pending.slice(-20); persistPending(); renderBal();
+    showTab('desk'); toast('Accepted. Confirm it when their float arrives.');
+    showReqNote(p.note);
+    nextReq();
+    schedulePrompt();
+  });
+  $('iNo').addEventListener('click', function () { var c = reqCur; if (!c) return; setReqStatus(c, 'rejected'); toast('Rejected'); nextReq(); });
+  $('reqNoteX').addEventListener('click', function () { showReqNote(''); });
+
+  var SAMPLES = [
+    { job: 'deposit', details: {}, amt: 5000 },
+    { job: 'withdraw', details: {}, amt: 20000 },
+    { job: 'airtime', details: {}, amt: 1000 },
+    { job: 'float', details: { floatMode: 'send_to_client' }, amt: 50000 },
+    { job: 'float', details: { floatMode: 'receive_from_client' }, amt: 30000 },
+    { job: 'gooddeal', details: { bundle: 'call_data' }, amt: 1000 }
+  ], sampleI = 0;
+  $('testReq').addEventListener('click', function () {
+    var s0 = SAMPLES[sampleI++ % SAMPLES.length];
+    var n = '677123456';
+    enqueue({ v: 1, id: 'test' + uid(), t: Date.now(), status: 'pending', job: s0.job, details: s0.details, num: n, phone: '237' + n, amt: s0.amt, currency: 'FCFA' });
+  });
+
+  function link(on) { $('linkState').textContent = on ? ' \u25cf Live' : ' \u25cb Offline'; $('linkState').className = on ? 'on' : ''; }
+  /* Transport. A real backend can set window.MOMO_TRANSPORT = { subscribe(cb), setStatus(id, status) } before this runs. */
+  function connectReqs() {
+    var T = window.MOMO_TRANSPORT;
+    if (T && T.subscribe) { try { T.subscribe(enqueue); link(true); } catch (e) { link(false); } return; }
+    if (!window.claude || !window.claude.use) { link(false); return; }
+    window.claude.use('db').then(function (db) {
+      if (!db) { link(false); return; }
+      reqDb = db; link(true);
+      db.collection('requests').where('status', '==', 'pending').onSnapshot(
+        function (snap) { snap.docs.forEach(function (d) { enqueue(d.data()); }); },
+        function () { link(false); });
+    }, function () { link(false); });
+  }
+
+  renderTypes(); renderJobsList(); makePad('deskPad', 'amt', update, true); renderContacts(); renderHelpers(); renderPresets(); renderBal(); renderLedger(); renderAdj(); renderAuto(); renderEye(); askUpdate(); update(); renderDelay(); renderCalcKeys(); renderCalc();
+  showTab('desk');
+  setTimeout(placeFab, 60);
+  schedulePrompt();
+  connectReqs();
+})();
+</script>
+
+</body></html>
