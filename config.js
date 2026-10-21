@@ -3,5 +3,5 @@
 window.MOMO_CONFIG = {
   url: 'https://YOUR-PROJECT-ID.supabase.co',
   key: 'YOUR-ANON-PUBLIC-KEY',
-  vapidPublic: 'YOUR-NOTIFICATION-PUBLIC-KEY'   /* from make-keys.html */
+  vapidPublic: 'BOvLZjflJOJlTKysDm6-AEaEtJ9frlkxvaIF0YGI2t9UzbELNq6i-FuQPFAtIaYDs4vj1CEikNzMUMZguhiulIA'   /* from make-keys.html */
 };
