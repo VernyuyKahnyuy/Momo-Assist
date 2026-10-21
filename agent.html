@@ -1,5 +1,7 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>
+<html lang="en"><head>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0a7a57"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>
 <title>MoMo Agent Desk</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@500;600&family=Hanken+Grotesk:wght@400;500;600&display=swap">
@@ -537,6 +539,15 @@ input:focus-visible, textarea:focus-visible, button:focus-visible, a:focus-visib
       <div class="seg full" id="delaySeg"></div>
       <div class="hint">After you open the app or come back from dialing, the app waits this long, and until you stop tapping, before asking "Did it go through?" or about repeated transactions. This way it does not interrupt you while you are busy.</div>
     </div>
+    <div class="settings-block" id="pnBlock" hidden>
+      <span class="fl">Notifications</span>
+      <div class="hint">Get a notification on this phone when a client sends a request, even when the desk is closed. Tap it to open the desk.</div>
+      <div class="hint" id="pnStatus" style="font-weight:600"></div>
+      <div class="inputrow">
+        <button class="btn primary" id="pnOn" type="button" style="flex:1">Turn on notifications</button>
+        <button class="btn" id="pnTest" type="button">Test</button>
+      </div>
+    </div>
     <div class="settings-block" id="cdBlock" hidden>
       <span class="fl">Request cooldown</span>
       <div class="hint">After a client sends a request, they cannot send another until you answer it, or until this many seconds pass. Set 0 to turn it off.</div>
@@ -723,6 +734,12 @@ input:focus-visible, textarea:focus-visible, button:focus-visible, a:focus-visib
         document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') pull(); });
         setInterval(function () { if (document.visibilityState === 'visible') pull(); }, 20000);
       });
+    },
+    savePush: function (sub) {
+      var j = sub.toJSON();
+      return ensure().then(function () {
+        return sb.from('push_subscriptions').upsert({ endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth });
+      }).then(function (r) { return !r.error; }, function () { return false; });
     },
     getCooldown: function () {
       return ensure().then(function () { return sb.from('settings').select('cooldown_seconds').eq('id', 1).single(); })
@@ -1729,6 +1746,37 @@ input:focus-visible, textarea:focus-visible, button:focus-visible, a:focus-visib
       var n = Math.round(Number($('cdIn').value.replace(/\D/g, '')));
       if (!(n >= 0 && n <= 3600)) { toast('Enter 0 to 3600 seconds'); return; }
       T.setCooldown(n).then(function (ok) { toast(ok ? (n ? 'Cooldown set to ' + n + ' s' : 'Cooldown turned off') : 'Could not save'); });
+    });
+  })();
+  (function () {
+    var T = window.MOMO_TRANSPORT, C = window.MOMO_CONFIG;
+    if (!T || !T.savePush || !C || !C.vapidPublic || /YOUR-/.test(C.vapidPublic)) return;
+    $('pnBlock').hidden = false;
+    var supported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+    function key(b) { var s = (b + '===='.slice(b.length % 4 || 4)).replace(/-/g, '+').replace(/_/g, '/'), r = atob(s), o = new Uint8Array(r.length); for (var i = 0; i < r.length; i++) o[i] = r.charCodeAt(i); return o; }
+    function say(t) { $('pnStatus').textContent = t; }
+    function swReg() { return navigator.serviceWorker.register('sw.js').then(function () { return navigator.serviceWorker.ready; }); }
+    function show() {
+      if (Notification.permission === 'denied') { say('Blocked. In Chrome, tap the lock icon by the address, then Permissions, and allow Notifications.'); return; }
+      if (Notification.permission !== 'granted') { say('Off'); return; }
+      swReg().then(function (reg) { return reg.pushManager.getSubscription(); }).then(function (sub) {
+        if (sub) { say('On. This phone will be notified.'); T.savePush(sub); $('pnOn').textContent = 'Turn on again'; }
+        else say('Off');
+      });
+    }
+    if (!supported) { say('This browser does not support notifications. Use Chrome on Android.'); $('pnOn').disabled = true; $('pnTest').disabled = true; return; }
+    show();
+    $('pnOn').addEventListener('click', function () {
+      Notification.requestPermission().then(function (perm) {
+        if (perm !== 'granted') { say('Not allowed. Tap Turn on and choose Allow.'); return; }
+        return swReg().then(function (reg) {
+          return reg.pushManager.getSubscription().then(function (sub) { return sub || reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key(C.vapidPublic) }); });
+        }).then(function (sub) { return T.savePush(sub); }).then(function (ok) { say(ok ? 'On. This phone will be notified.' : 'Could not save. Sign in again and retry.'); });
+      }).catch(function () { say('Could not turn on. Try again.'); });
+    });
+    $('pnTest').addEventListener('click', function () {
+      if (Notification.permission !== 'granted') { toast('Turn notifications on first'); return; }
+      swReg().then(function (reg) { return reg.showNotification('Test request \u00b7 5,000 FCFA', { body: 'Tap to open your desk.', requireInteraction: true, icon: 'icon-192.png', data: { url: 'agent.html' } }); });
     });
   })();
   function renderDupSw() { $('dupSw').setAttribute('aria-checked', state.dup); }
